@@ -19,6 +19,17 @@ The goal of EmilyAI is to provide an intuitive platform where users can either m
     -   Short-form Videos: 9:16 (Reels/TikTok) and 16:9 (Short ads).
     -   Note: Generation (~5-10 mins) is handled via direct AI model APIs with status notifications.
 
+## Brand Language
+
+-   **Theme**: Warm Light Mode (Cinematic Aesthetic).
+-   **Typography**:
+    -   *Serif*: [Playfair Display](https://fonts.google.com/specimen/Playfair+Display) (Heads/Titles).
+    -   *Sans*: [Inter](https://fonts.google.com/specimen/Inter) (Body/UI).
+    -   *Mono*: [JetBrains Mono](https://fonts.google.com/specimen/JetBrains+Mono) (Accents/Data).
+-   **Palette**: Orange (#f97316) to Pink (#ec4899) gradients. No blue/purple.
+-   **Visuals**: Subtle grid/dot patterns, soft blur orbs, and high-fidelity textures.
+-   **Motion**: Smooth spring-based animations and interactive micro-transitions.
+
 ## Technical Stack
 
 -   **Framework**: [Next.js](https://nextjs.org/) (App Router)

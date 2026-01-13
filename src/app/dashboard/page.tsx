@@ -2,18 +2,18 @@
 
 import React, { useState } from "react";
 import { UserButton, useUser } from "@clerk/nextjs";
-import { 
-  Plus, 
-  LayoutDashboard, 
-  Search, 
-  MessageSquare, 
-  Zap, 
-  Settings, 
-  LogOut,
+import {
+  Plus,
+  LayoutDashboard,
+  Search,
+  MessageSquare,
+  Zap,
+  Settings,
   ChevronRight,
   TrendingUp,
   Video,
-  FileText
+  FileText,
+  Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -30,14 +30,17 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] text-white overflow-hidden">
+    <div className="flex h-screen bg-[#faf9f7] text-[#1a1a1a] overflow-hidden font-[var(--font-inter)]">
+      {/* Background */}
+      <div className="fixed inset-0 bg-dots pointer-events-none opacity-40" />
+
       {/* Sidebar */}
-      <aside className="w-64 border-r border-white/5 bg-[#0d0d0d] flex flex-col">
+      <aside className="w-64 border-r border-black/[0.04] bg-white/60 backdrop-blur-xl flex flex-col relative z-10">
         <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-indigo-500/20">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-bold text-white text-sm shadow-lg shadow-orange-500/20">
             E
           </div>
-          <span className="font-bold text-lg tracking-tight">EmilyAI</span>
+          <span className="font-semibold text-lg tracking-tight">EmilyAI</span>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
@@ -46,128 +49,200 @@ export default function DashboardPage() {
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group",
-                activeTab === item.id 
-                  ? "bg-white/5 text-white" 
-                  : "text-white/40 hover:text-white hover:bg-white/[0.02]"
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 group",
+                activeTab === item.id
+                  ? "bg-white text-[#1a1a1a] shadow-sm border border-black/[0.04]"
+                  : "text-[#1a1a1a]/40 hover:text-[#1a1a1a] hover:bg-white/50"
               )}
             >
-              <item.icon size={18} className={cn(
-                "transition-colors",
-                activeTab === item.id ? "text-indigo-400" : "group-hover:text-white/60"
-              )} />
+              <item.icon
+                size={18}
+                className={cn(
+                  "transition-colors duration-300",
+                  activeTab === item.id ? "text-orange-500" : "group-hover:text-[#1a1a1a]/60"
+                )}
+              />
               {item.label}
               {activeTab === item.id && (
-                <motion.div layoutId="active" className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                <motion.div
+                  layoutId="active-indicator"
+                  className="ml-auto w-1.5 h-1.5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
               )}
             </button>
           ))}
         </div>
 
-        <div className="p-4 mt-auto border-t border-white/5 bg-black/20">
-          <div className="flex items-center gap-3 p-2 rounded-xl bg-white/[0.02] border border-white/5">
+        <div className="p-4 mt-auto border-t border-black/[0.04]">
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-white border border-black/[0.04] shadow-sm">
             <UserButton afterSignOutUrl="/" />
             <div className="flex flex-col overflow-hidden">
-              <span className="text-xs font-semibold truncate">{user?.fullName || "Active User"}</span>
-              <span className="text-[10px] text-white/40 truncate">Free Plan</span>
+              <span className="text-xs font-medium truncate">{user?.fullName || "Active User"}</span>
+              <span className="text-[10px] text-[#1a1a1a]/40 truncate font-[var(--font-jetbrains)]">Free Plan</span>
             </div>
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
-        <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-black/20 backdrop-blur-md z-10">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-white/40">
-            {sidebarItems.find(i => i.id === activeTab)?.label}
+        <header className="h-16 border-b border-black/[0.04] flex items-center justify-between px-8 bg-white/60 backdrop-blur-xl z-10">
+          <h2 className="text-xs font-[var(--font-jetbrains)] font-medium uppercase tracking-widest text-[#1a1a1a]/40">
+            {sidebarItems.find((i) => i.id === activeTab)?.label}
           </h2>
           <div className="flex items-center gap-4">
-             <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 font-bold text-xs hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/10">
-                <Plus size={14} /> Create Product
-             </button>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white font-medium text-xs shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all duration-300"
+            >
+              <Plus size={14} /> Create Product
+            </motion.button>
           </div>
         </header>
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8 relative">
-           <AnimatePresence mode="wait">
-             <motion.div
-               key={activeTab}
-               initial={{ opacity: 0, y: 10 }}
-               animate={{ opacity: 1, y: 0 }}
-               exit={{ opacity: 0, y: -10 }}
-               className="max-w-6xl mx-auto space-y-8"
-             >
-                {activeTab === "overview" && (
-                   <>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <StatCard label="Total Research" value="12" icon={Search} color="indigo" />
-                      <StatCard label="Assets Generated" value="48" icon={Zap} color="violet" />
-                      <StatCard label="Success Rate" value="98.2%" icon={TrendingUp} color="emerald" />
-                    </div>
+          {/* Decorative blur */}
+          <div className="blur-orb-orange top-[-100px] right-[10%] opacity-50" />
 
-                    <div className="space-y-6">
-                       <h3 className="text-xl font-bold">Your Products</h3>
-                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {/* Placeholder Product Card */}
-                          <div className="group relative p-6 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all cursor-pointer">
-                             <div className="absolute top-4 right-4 text-white/20 group-hover:text-indigo-400 transition-colors">
-                                <ChevronRight size={20} />
-                             </div>
-                             <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center mb-6 border border-indigo-500/20">
-                                <div className="text-indigo-400 font-bold">E1</div>
-                             </div>
-                             <h4 className="text-lg font-bold mb-1">EcoInnovate</h4>
-                             <p className="text-sm text-white/40 mb-4 line-clamp-2">Sustainble tech brand research and marketing assets.</p>
-                             <div className="flex items-center gap-4 text-xs font-medium text-white/30">
-                                <span className="flex items-center gap-1.5"><FileText size={12}/> 8 Posts</span>
-                                <span className="flex items-center gap-1.5"><Video size={12}/> 2 Videos</span>
-                             </div>
-                          </div>
-                          
-                          <button className="group flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-white/5 hover:border-indigo-500/30 hover:bg-white/[0.01] transition-all">
-                             <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                                <Plus size={24} className="text-white/20 group-hover:text-indigo-400" />
-                             </div>
-                             <span className="text-sm font-semibold text-white/20 group-hover:text-white/60 transition-colors">Create New Product</span>
-                          </button>
-                       </div>
-                    </div>
-                   </>
-                )}
-
-                {activeTab === "research" && (
-                  <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-6">
-                      <MessageSquare size={32} className="text-indigo-400" />
-                    </div>
-                    <h3 className="text-2xl font-bold mb-2">Research Agent Ready</h3>
-                    <p className="text-white/40 max-w-sm">Select a product to start a research session with Emily.</p>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="max-w-5xl mx-auto space-y-8"
+            >
+              {activeTab === "overview" && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard label="Total Research" value="12" icon={Search} color="orange" />
+                    <StatCard label="Assets Generated" value="48" icon={Zap} color="pink" />
+                    <StatCard label="Success Rate" value="98.2%" icon={TrendingUp} color="green" />
                   </div>
-                )}
-             </motion.div>
-           </AnimatePresence>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-[var(--font-playfair)] font-medium">Your Products</h3>
+                      <span className="text-xs text-[#1a1a1a]/30 font-[var(--font-jetbrains)]">2 products</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {/* Product Card */}
+                      <motion.div
+                        whileHover={{ y: -4 }}
+                        className="group relative p-6 rounded-2xl bg-white border border-black/[0.04] hover:shadow-xl hover:shadow-black/[0.03] transition-all duration-500 cursor-pointer"
+                      >
+                        <div className="absolute top-5 right-5 text-[#1a1a1a]/10 group-hover:text-orange-400 transition-colors duration-300">
+                          <ChevronRight size={18} />
+                        </div>
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 flex items-center justify-center mb-6 border border-orange-200/50">
+                          <span className="text-orange-600 font-semibold text-sm">E1</span>
+                        </div>
+                        <h4 className="text-base font-semibold mb-1">EcoInnovate</h4>
+                        <p className="text-sm text-[#1a1a1a]/40 mb-5 line-clamp-2">
+                          Sustainable tech brand research and marketing assets.
+                        </p>
+                        <div className="flex items-center gap-4 text-xs font-[var(--font-jetbrains)] text-[#1a1a1a]/30">
+                          <span className="flex items-center gap-1.5">
+                            <FileText size={12} /> 8 Posts
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <Video size={12} /> 2 Videos
+                          </span>
+                        </div>
+                      </motion.div>
+
+                      {/* Create New Card */}
+                      <motion.button
+                        whileHover={{ scale: 1.01 }}
+                        className="group flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all duration-500"
+                      >
+                        <div className="w-12 h-12 rounded-full border border-black/[0.06] flex items-center justify-center mb-4 group-hover:scale-110 group-hover:border-orange-300 transition-all duration-500">
+                          <Plus size={20} className="text-[#1a1a1a]/20 group-hover:text-orange-500 transition-colors duration-300" />
+                        </div>
+                        <span className="text-sm font-medium text-[#1a1a1a]/30 group-hover:text-[#1a1a1a]/60 transition-colors duration-300">
+                          Create New Product
+                        </span>
+                      </motion.button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {activeTab === "research" && (
+                <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+                  <motion.div
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-100 to-pink-100 border border-orange-200/50 flex items-center justify-center mb-8"
+                  >
+                    <MessageSquare size={32} className="text-orange-500" />
+                  </motion.div>
+                  <h3 className="text-2xl font-[var(--font-playfair)] font-medium mb-3">Research Agent Ready</h3>
+                  <p className="text-[#1a1a1a]/40 max-w-sm mb-8">
+                    Select a product to start a research session with Emily.
+                  </p>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="px-6 py-3 rounded-full bg-[#1a1a1a] text-white font-medium text-sm flex items-center gap-2"
+                  >
+                    <Sparkles size={14} /> Start New Research
+                  </motion.button>
+                </div>
+              )}
+
+              {activeTab === "assets" && (
+                <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+                  <motion.div
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-100 to-orange-100 border border-pink-200/50 flex items-center justify-center mb-8"
+                  >
+                    <Zap size={32} className="text-pink-500" />
+                  </motion.div>
+                  <h3 className="text-2xl font-[var(--font-playfair)] font-medium mb-3">Asset Lab</h3>
+                  <p className="text-[#1a1a1a]/40 max-w-sm">
+                    Create LinkedIn posts, tweets, and short-form videos for your products.
+                  </p>
+                </div>
+              )}
+
+              {activeTab === "settings" && (
+                <div className="p-8 rounded-2xl bg-white border border-black/[0.04]">
+                  <h3 className="text-xl font-[var(--font-playfair)] font-medium mb-6">Settings</h3>
+                  <p className="text-[#1a1a1a]/40 text-sm">Account settings and preferences coming soon.</p>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
     </div>
   );
 }
 
-function StatCard({ label, value, icon: Icon, color }: any) {
-  const colors: any = {
-    indigo: "from-indigo-500/20 to-indigo-500/5 text-indigo-400 border-indigo-500/10",
-    violet: "from-violet-500/20 to-violet-500/5 text-violet-400 border-violet-500/10",
-    emerald: "from-emerald-500/20 to-emerald-500/5 text-emerald-400 border-emerald-500/10"
+function StatCard({ label, value, icon: Icon, color }: { label: string; value: string; icon: React.ElementType; color: string }) {
+  const colors: Record<string, string> = {
+    orange: "from-orange-50 to-orange-100/50 text-orange-600 border-orange-200/50",
+    pink: "from-pink-50 to-pink-100/50 text-pink-600 border-pink-200/50",
+    green: "from-emerald-50 to-emerald-100/50 text-emerald-600 border-emerald-200/50",
   };
 
   return (
-    <div className={cn("p-6 rounded-2xl bg-gradient-to-br border shadow-sm", colors[color])}>
+    <motion.div
+      whileHover={{ y: -2 }}
+      className={cn("p-6 rounded-2xl bg-gradient-to-br border transition-all duration-300", colors[color])}
+    >
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs font-bold uppercase tracking-wider opacity-60">{label}</span>
+        <span className="text-xs font-[var(--font-jetbrains)] uppercase tracking-wider opacity-60">{label}</span>
         <Icon size={18} />
       </div>
-      <div className="text-3xl font-bold text-white">{value}</div>
-    </div>
+      <div className="text-3xl font-[var(--font-playfair)] font-medium text-[#1a1a1a]">{value}</div>
+    </motion.div>
   );
 }
