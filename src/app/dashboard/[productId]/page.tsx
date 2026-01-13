@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { CreateAssetModal } from "@/components/CreateAssetModal";
 import {
   ArrowLeft,
   MessageSquare,
@@ -27,12 +28,12 @@ import { cn } from "@/lib/utils";
 
 export default function ProductDashboardPage() {
   const params = useParams();
-  const router = useRouter();
   const productId = params.productId as string;
   const [product, setProduct] = useState<Product | null>(null);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -152,7 +153,10 @@ export default function ProductDashboardPage() {
             <MessageSquare size={16} />
             Start Research
           </Link>
-          <button className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-medium shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all">
+          <button
+            onClick={() => setIsAssetModalOpen(true)}
+            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-medium shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all"
+          >
             <Sparkles size={16} />
             Create Asset
           </button>
@@ -258,13 +262,24 @@ export default function ProductDashboardPage() {
               );
             })}
             {/* Add New Asset */}
-            <button className="p-4 rounded-xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all flex flex-col items-center justify-center min-h-[100px] group">
+            <button 
+              onClick={() => setIsAssetModalOpen(true)}
+              className="p-4 rounded-xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all flex flex-col items-center justify-center min-h-[100px] group"
+            >
               <Plus size={20} className="text-[#1a1a1a]/20 group-hover:text-orange-500 transition-colors mb-2" />
               <span className="text-xs text-[#1a1a1a]/30 group-hover:text-[#1a1a1a]/60 transition-colors">Create Asset</span>
             </button>
           </div>
         </motion.div>
       </main>
+
+      {/* Asset Creation Modal */}
+      <CreateAssetModal
+        isOpen={isAssetModalOpen}
+        onClose={() => setIsAssetModalOpen(false)}
+        productId={productId}
+        productName={product?.name || ""}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -36,7 +36,9 @@ interface ChatSession {
 export default function ProductChatPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const productId = params.productId as string;
+  const initialPrompt = searchParams.get("prompt") || "";
 
   const [product, setProduct] = useState<Product | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
@@ -47,7 +49,7 @@ export default function ProductChatPage() {
       content: "What would you like to research or update today?",
     },
   ]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialPrompt);
   const [isThinking, setIsThinking] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
