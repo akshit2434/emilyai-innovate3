@@ -18,9 +18,27 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
+import { CreateProductModal } from "@/components/CreateProductModal";
+import { getProducts } from "@/app/actions/products";
+import { Product } from "@/types";
+
 export default function DashboardPage() {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const [activeTab, setActiveTab] = useState("overview");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  React.useEffect(() => {
+    async function loadProducts() {
+      if (isLoaded && user) {
+        const fetchedProducts = await getProducts();
+        setProducts(fetchedProducts);
+        setIsInitialLoad(false);
+      }
+    }
+    loadProducts();
+  }, [isLoaded, user]);
 
   const sidebarItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -79,7 +97,9 @@ export default function DashboardPage() {
             <UserButton afterSignOutUrl="/" />
             <div className="flex flex-col overflow-hidden">
               <span className="text-xs font-medium truncate">{user?.fullName || "Active User"}</span>
-              <span className="text-[10px] text-[#1a1a1a]/40 truncate font-[var(--font-jetbrains)]">Free Plan</span>
+              <span className="text-[10px] text-[#1a1a1a]/40 truncate font-[var(--font-jetbrains)] text-balance">
+                {user?.primaryEmailAddress?.emailAddress || "Free Plan"}
+              </span>
             </div>
           </div>
         </div>
@@ -96,6 +116,7 @@ export default function DashboardPage() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
+              onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white font-medium text-xs shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all duration-300"
             >
               <Plus size={14} /> Create Product
@@ -128,38 +149,53 @@ export default function DashboardPage() {
                   <div className="space-y-6">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xl font-[var(--font-playfair)] font-medium">Your Products</h3>
-                      <span className="text-xs text-[#1a1a1a]/30 font-[var(--font-jetbrains)]">2 products</span>
+                      <span className="text-xs text-[#1a1a1a]/30 font-[var(--font-jetbrains)]">
+                        {products.length} {products.length === 1 ? 'product' : 'products'}
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {/* Product Card */}
-                      <motion.div
-                        whileHover={{ y: -4 }}
-                        className="group relative p-6 rounded-2xl bg-white border border-black/[0.04] hover:shadow-xl hover:shadow-black/[0.03] transition-all duration-500 cursor-pointer"
-                      >
-                        <div className="absolute top-5 right-5 text-[#1a1a1a]/10 group-hover:text-orange-400 transition-colors duration-300">
-                          <ChevronRight size={18} />
-                        </div>
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 flex items-center justify-center mb-6 border border-orange-200/50">
-                          <span className="text-orange-600 font-semibold text-sm">E1</span>
-                        </div>
-                        <h4 className="text-base font-semibold mb-1">EcoInnovate</h4>
-                        <p className="text-sm text-[#1a1a1a]/40 mb-5 line-clamp-2">
-                          Sustainable tech brand research and marketing assets.
-                        </p>
-                        <div className="flex items-center gap-4 text-xs font-[var(--font-jetbrains)] text-[#1a1a1a]/30">
-                          <span className="flex items-center gap-1.5">
-                            <FileText size={12} /> 8 Posts
-                          </span>
-                          <span className="flex items-center gap-1.5">
-                            <Video size={12} /> 2 Videos
-                          </span>
-                        </div>
-                      </motion.div>
+                      {isInitialLoad ? (
+                         [1, 2].map((i) => (
+                          <div key={i} className="h-48 rounded-2xl bg-black/[0.02] border border-black/[0.04] animate-pulse" />
+                         ))
+                      ) : (
+                        <>
+                          {products.map((product) => (
+                            <motion.div
+                              key={product.id}
+                              whileHover={{ y: -4 }}
+                              className="group relative p-6 rounded-2xl bg-white border border-black/[0.04] hover:shadow-xl hover:shadow-black/[0.03] transition-all duration-500 cursor-pointer"
+                            >
+                              <div className="absolute top-5 right-5 text-[#1a1a1a]/10 group-hover:text-orange-400 transition-colors duration-300">
+                                <ChevronRight size={18} />
+                              </div>
+                              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 flex items-center justify-center mb-6 border border-orange-200/50">
+                                <span className="text-orange-600 font-semibold text-sm">
+                                  {product.name.substring(0, 2).toUpperCase()}
+                                </span>
+                              </div>
+                              <h4 className="text-base font-semibold mb-1 truncate">{product.name}</h4>
+                              <p className="text-sm text-[#1a1a1a]/40 mb-5 line-clamp-2">
+                                {product.description}
+                              </p>
+                              <div className="flex items-center gap-4 text-xs font-[var(--font-jetbrains)] text-[#1a1a1a]/30">
+                                <span className="flex items-center gap-1.5">
+                                  <FileText size={12} /> 0 Posts
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <Video size={12} /> 0 Videos
+                                </span>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </>
+                      )}
 
                       {/* Create New Card */}
                       <motion.button
                         whileHover={{ scale: 1.01 }}
-                        className="group flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all duration-500"
+                        onClick={() => setIsModalOpen(true)}
+                        className="group flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all duration-500 min-h-[12rem]"
                       >
                         <div className="w-12 h-12 rounded-full border border-black/[0.06] flex items-center justify-center mb-4 group-hover:scale-110 group-hover:border-orange-300 transition-all duration-500">
                           <Plus size={20} className="text-[#1a1a1a]/20 group-hover:text-orange-500 transition-colors duration-300" />
@@ -222,6 +258,11 @@ export default function DashboardPage() {
           </AnimatePresence>
         </div>
       </main>
+
+      <CreateProductModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+      />
     </div>
   );
 }
