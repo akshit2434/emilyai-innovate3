@@ -62,7 +62,62 @@ const updateBrandInfoTool = tool(
   }
 );
 
-const tools = [updateBrandInfoTool];
+// Web Search Tool (Tavily)
+const webSearchTool = tool(
+  async ({ query, max_results = 5 }) => {
+    try {
+      const apiKey = process.env.TAVILY_API_KEY;
+      if (!apiKey) {
+        return JSON.stringify({
+          error: "Tavily API key not configured",
+          results: [],
+        });
+      }
+
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          max_results,
+          search_depth: "advanced",
+          include_answer: true,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Search failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return JSON.stringify({
+        answer: data.answer,
+        results: data.results?.map((r: any) => ({
+          title: r.title,
+          url: r.url,
+          snippet: r.content?.slice(0, 300),
+        })) || [],
+      });
+    } catch (error: any) {
+      console.error("Web search error:", error);
+      return JSON.stringify({
+        error: error.message,
+        results: [],
+      });
+    }
+  },
+  {
+    name: "web_search",
+    description: "Search the web for real-time information about markets, competitors, trends, or current events. Use this for research tasks.",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      max_results: z.number().optional().describe("Max results to return (default 5)"),
+    }),
+  }
+);
+
+const tools = [updateBrandInfoTool, webSearchTool];
 
 // Mock Asset Generation Tools
 const generateLinkedInPostTool = tool(
@@ -169,6 +224,7 @@ const editImageTool = tool(
 
 const allTools = [
   updateBrandInfoTool,
+  webSearchTool,
   generateLinkedInPostTool,
   generateTwitterThreadTool,
   generateMarketingImageTool,
