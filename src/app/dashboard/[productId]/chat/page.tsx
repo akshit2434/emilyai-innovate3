@@ -16,11 +16,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getProductById } from "@/app/actions/products";
+import { chatWithBrandAgent } from "@/app/actions/brand";
 import { Product } from "@/types";
 import { cn } from "@/lib/utils";
+import { readStreamableValue } from "@ai-sdk/rsc";
+import { CinematicMessage } from "@/components/chat/CinematicMessage";
 
 interface Message {
-  role: "assistant" | "user";
+  id: string;
+  role: "assistant" | "user" | "system";
   content: string;
 }
 
@@ -44,6 +48,7 @@ export default function ProductChatPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
+      id: "initial-assistant",
       role: "assistant",
       content: "What would you like to research today?",
     },
@@ -54,7 +59,7 @@ export default function ProductChatPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -98,25 +103,54 @@ export default function ProductChatPage() {
 
     const userMessage = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    
+    const userMessageId = `user-${Date.now()}`;
+    const newMessages: Message[] = [...messages, { id: userMessageId, role: "user", content: userMessage }];
+    setMessages(newMessages);
     setIsThinking(true);
 
-    // Simulate AI response
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    try {
+      if (!product) throw new Error("Product data not loaded");
+      
+      const streamValue = await chatWithBrandAgent(productId, newMessages, product);
+      const assistantMessageId = `assistant-${Date.now()}`;
+      
+      // Add an empty assistant message to be filled
+      setMessages((prev) => [...prev, { id: assistantMessageId, role: "assistant", content: "" }]);
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: `I'll research "${userMessage}" for ${product?.name || "your product"}. This would connect to the LangGraph agent in production.`,
-      },
-    ]);
+      for await (const chunk of readStreamableValue(streamValue)) {
+        if (chunk?.content) {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next.find(m => m.id === assistantMessageId);
+            if (last) {
+              last.content = chunk.content;
+            }
+            return next;
+          });
+          
+          await new Promise(r => setTimeout(r, 20));
+        }
+
+        if (chunk?.toolResult?.success) {
+          // If brand info was updated, reload product data
+          const updatedProduct = await getProductById(productId);
+          if (updatedProduct) setProduct(updatedProduct);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      setMessages((prev) => [
+        ...prev,
+        { id: `error-${Date.now()}`, role: "assistant", content: "I encountered a minor glitch. Could you repeat that?" },
+      ]);
+    }
 
     setIsThinking(false);
   }
 
   return (
-    <div className="h-screen bg-[#faf9f7] text-[#1a1a1a] flex font-[var(--font-inter)] overflow-hidden">
+    <div className="h-screen bg-[#faf9f7] text-[#1a1a1a] flex font-[var(--font-inter)] overflow-hidden fixed inset-0">
       {/* Background */}
       <div className="fixed inset-0 bg-grid pointer-events-none opacity-30" />
 
@@ -229,36 +263,27 @@ export default function ProductChatPage() {
         <div className="blur-orb-orange top-[-150px] right-[5%] opacity-30" />
         <div className="blur-orb-pink bottom-[10%] left-[10%] opacity-20" />
 
-        <div className="flex-1 overflow-y-auto px-8 py-12 pb-40 relative z-10">
+        <div className="flex-1 overflow-y-auto px-8 py-12 pb-40 relative z-10 scrollbar-thin">
           <div className="max-w-2xl mx-auto space-y-8">
             <AnimatePresence mode="popLayout">
               {messages.map((msg, i) => (
                 <motion.div
-                  key={i}
+                  key={msg.id || i}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, delay: i * 0.03 }}
+                  transition={{ duration: 0.25 }}
                   className={msg.role === "user" ? "flex justify-end" : ""}
                 >
-                  {msg.role === "assistant" && (
+                  {msg.role === "assistant" ? (
                     <div className="flex items-start gap-4">
                       <div className="assistant-avatar mt-1">
                         <span className="assistant-avatar-initial">E</span>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-xl md:text-2xl font-[var(--font-cormorant)] font-medium leading-relaxed text-[#1a1a1a]/80">
-                          {msg.content}
-                        </p>
-                      </div>
+                      <CinematicMessage content={msg.content} isAssistant={true} />
                     </div>
-                  )}
-                  {msg.role === "user" && (
-                    <div className="inline-block max-w-md">
-                      <p className="text-base font-medium text-[#1a1a1a]/70 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-2xl border border-black/[0.04] shadow-sm">
-                        {msg.content}
-                      </p>
-                    </div>
+                  ) : (
+                    <CinematicMessage content={msg.content} isAssistant={false} />
                   )}
                 </motion.div>
               ))}
@@ -282,30 +307,49 @@ export default function ProductChatPage() {
 
         {/* Floating Input */}
         <div className="floating-input-container">
-          <div className="floating-input flex items-center gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Ask about competitors, market trends, audience..."
-              disabled={isThinking}
-              className="flex-1 px-4 py-3 bg-transparent focus:outline-none text-sm font-medium placeholder:text-[#1a1a1a]/30"
-            />
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleSend}
-              disabled={isThinking || !input.trim()}
-              className={cn("send-button", input.trim() && "has-content")}
-            >
-              <Send size={18} />
-            </motion.button>
-          </div>
-          <p className="text-center text-[9px] text-[#1a1a1a]/20 font-[var(--font-jetbrains)] mt-3">
-            Powered by Gemini 2.5 Flash
-          </p>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <div className="floating-input flex items-start gap-2">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Ask about competitors, market trends, or update your brand..."
+                disabled={isThinking}
+                rows={1}
+                className="flex-1 px-4 py-3 bg-transparent focus:outline-none text-sm font-medium placeholder:text-[#1a1a1a]/30 resize-none min-h-[44px] max-h-[120px] overflow-y-auto scrollbar-thin"
+                style={{ height: 'auto' }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                }}
+              />
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleSend}
+                disabled={isThinking || !input.trim()}
+                className={cn("send-button mt-1.5", input.trim() && "has-content")}
+              >
+                <Send size={18} />
+              </motion.button>
+            </div>
+            <p className="text-center text-[9px] text-[#1a1a1a]/20 font-[var(--font-jetbrains)] mt-3">
+              <span className="opacity-60">⏎ send</span>
+              <span className="mx-2">·</span>
+              <span className="opacity-60">⇧⏎ new line</span>
+            </p>
+          </motion.div>
         </div>
       </main>
     </div>

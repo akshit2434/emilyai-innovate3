@@ -3,8 +3,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
+import { agent } from "@/lib/agent";
+import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 
-export async function createProduct(name: string, description: string) {
+export async function createProduct(name: string, description: string, extractedInfo?: any) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -18,6 +20,7 @@ export async function createProduct(name: string, description: string) {
         name,
         description,
         user_id: userId,
+        extracted_info: extractedInfo,
       },
     ])
     .select();
@@ -119,4 +122,68 @@ export async function getProductById(productId: string) {
   }
 
   return data;
+}
+
+import { createStreamableValue } from "@ai-sdk/rsc";
+
+export async function chatWithOnboardingAgent(messages: { role: string; content: string }[]) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const stream = createStreamableValue();
+
+  // Run the agent flow in the background
+  (async () => {
+    try {
+      const langChainMessages = messages.map((m) => {
+        if (m.role === "assistant") return new AIMessage(m.content);
+        if (m.role === "system") return new SystemMessage(m.content);
+        return new HumanMessage(m.content);
+      });
+
+      const resultStream = await agent.stream({
+        messages: langChainMessages,
+      });
+
+      let finalContent = "";
+      let toolResult = null;
+
+      for await (const chunk of resultStream) {
+        if (chunk.agent?.messages) {
+          const lastMsg = chunk.agent.messages[chunk.agent.messages.length - 1] as AIMessage;
+          
+          // Only stream content if there's actual text and no tool calls in this message
+          // (LangGraph node-level streaming gives the complete message)
+          if (lastMsg.content && (!lastMsg.tool_calls || lastMsg.tool_calls.length === 0)) {
+            const content = typeof lastMsg.content === 'string' ? lastMsg.content : "";
+            if (content) {
+              stream.update({ content });
+            }
+          }
+        }
+        
+        if (chunk.tools?.messages) {
+          const toolMsg = chunk.tools.messages[chunk.tools.messages.length - 1];
+          if (toolMsg.content) {
+            try {
+              const result = JSON.parse(toolMsg.content as string);
+              stream.update({ toolResult: result });
+            } catch (e) {
+              // Not JSON, skip
+            }
+          }
+        }
+      }
+
+      stream.done();
+    } catch (error) {
+      console.error("Agent streaming error:", error);
+      stream.error(error);
+    }
+  })();
+
+  return stream.value;
 }

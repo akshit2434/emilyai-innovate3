@@ -1,0 +1,115 @@
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { updateProduct } from "@/app/actions/brand";
+import { BaseMessage, AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+// Define State
+const AgentState = Annotation.Root({
+  messages: Annotation<BaseMessage[]>({
+    reducer: (x, y) => x.concat(y),
+    default: () => [],
+  }),
+  product: Annotation<any>({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
+  }),
+});
+
+// 1. Define the LLM
+const llm = new ChatGoogleGenerativeAI({
+  model: "gemini-2.0-flash",
+  apiKey: process.env.GOOGLE_GENAI_API_KEY,
+  temperature: 0.7,
+});
+
+// 2. Define the Tool
+const updateBrandInfoTool = tool(
+  async ({ productId, name, description, tagline, target_audience, value_proposition, industry }) => {
+    console.log("Updating product info via tool:", { productId, name });
+    
+    const updates: any = {};
+    if (name) updates.name = name;
+    if (description) updates.description = description;
+    
+    const extractedInfo: any = {};
+    if (tagline) extractedInfo.tagline = tagline;
+    if (target_audience) extractedInfo.target_audience = target_audience;
+    if (value_proposition) extractedInfo.value_proposition = value_proposition;
+    if (industry) extractedInfo.industry = industry;
+    
+    if (Object.keys(extractedInfo).length > 0) {
+      updates.extracted_info = extractedInfo;
+    }
+
+    await updateProduct(productId, updates);
+    return JSON.stringify({ success: true, message: "Brand information updated successfully." });
+  },
+  {
+    name: "update_brand_info",
+    description: "Update the product's brand information. Use this when the user wants to change their name, description, audience, or any other brand field.",
+    schema: z.object({
+      productId: z.string().describe("The ID of the product to update"),
+      name: z.string().optional().describe("The name of the company or product"),
+      description: z.string().optional().describe("A concise summary of what the product does"),
+      tagline: z.string().optional().describe("A catchy cinematic tagline"),
+      target_audience: z.string().optional().describe("Who the product is for"),
+      value_proposition: z.string().optional().describe("What unique value it provides"),
+      industry: z.string().optional().describe("The industry sector"),
+    }),
+  }
+);
+
+const tools = [updateBrandInfoTool];
+const toolNode = new ToolNode(tools);
+
+// 3. Define the Flow
+const callModel = async (state: typeof AgentState.State) => {
+  const { messages, product } = state;
+  const systemPrompt = new SystemMessage(`
+    You are Emily, a cinematic AI brand strategist. You are currently working with the user on their product: "${product?.name}".
+    
+    Current Brand Profile:
+    - Description: ${product?.description || "Not set"}
+    - Target Audience: ${product?.extracted_info?.target_audience || "Not set"}
+    - Value Prop: ${product?.extracted_info?.value_proposition || "Not set"}
+    - Tagline: ${product?.extracted_info?.tagline || "Not set"}
+    
+    Your Dual Role:
+    1. RESEARCHER: Answer questions about market trends, competitors, or audience research.
+    2. BRAND EDITOR: If the user wants to change anything about their brand, use the 'update_brand_info' tool.
+    
+    Directives:
+    - BE CONCISE. Avoid generic pleasantries.
+    - BE CRITICAL. If the user suggests a weak branding change, critique it first.
+    - CONFIRM EDITS. Before using the tool to update info, confirm the changes with the user.
+    
+    Tone: Sophisticated, sharp, cinematic.
+  `);
+  
+  const modelWithTools = llm.bindTools(tools);
+  const response = await modelWithTools.invoke([systemPrompt, ...messages]);
+  return { messages: [response] };
+};
+
+const shouldContinue = (state: typeof AgentState.State) => {
+  const { messages } = state;
+  const lastMessage = messages[messages.length - 1] as AIMessage;
+  
+  if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+    return "tools";
+  }
+  return END;
+};
+
+// Define Graph
+const workflow = new StateGraph(AgentState)
+  .addNode("agent", callModel)
+  .addNode("tools", toolNode)
+  .addEdge(START, "agent")
+  .addConditionalEdges("agent", shouldContinue)
+  .addEdge("tools", "agent");
+
+export const brandAgent = workflow.compile();

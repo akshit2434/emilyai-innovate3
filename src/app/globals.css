@@ -87,6 +87,19 @@ html {
   background: rgba(0, 0, 0, 0.2);
 }
 
+/* Hide scrollbar but keep functionality */
+.scrollbar-thin {
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  display: none;
+  /* Chrome/Safari/Opera */
+}
+
 /* Floating input container */
 .floating-input-container {
   position: absolute;

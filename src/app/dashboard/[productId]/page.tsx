@@ -124,11 +124,21 @@ export default function ProductDashboardPage() {
             {/* Info */}
             <div className="flex-1 min-w-0">
               <h1 className="text-3xl font-[var(--font-playfair)] font-medium mb-2">{product.name}</h1>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {product.extracted_info?.industry && (
+                  <span className="px-2 py-0.5 rounded-full bg-orange-100/50 text-orange-600 text-[9px] font-[var(--font-jetbrains)] uppercase tracking-wider border border-orange-200/50">
+                    {product.extracted_info.industry}
+                  </span>
+                )}
+                <span className="px-2 py-0.5 rounded-full bg-black/[0.03] text-[#1a1a1a]/40 text-[9px] font-[var(--font-jetbrains)] uppercase tracking-wider border border-black/[0.04]">
+                  Brand Locked
+                </span>
+              </div>
               <p className="text-sm text-[#1a1a1a]/50 leading-relaxed max-w-xl mb-4">
                 {product.description || "No description yet."}
               </p>
               {product.extracted_info?.tagline && (
-                <p className="text-xs font-[var(--font-cormorant)] italic text-[#1a1a1a]/60">
+                <p className="text-sm font-[var(--font-cormorant)] italic text-[#1a1a1a]/70 border-l-2 border-orange-200 pl-3">
                   "{product.extracted_info.tagline}"
                 </p>
               )}
@@ -145,12 +155,12 @@ export default function ProductDashboardPage() {
         >
           <Link
             href={`/dashboard/${productId}/chat`}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-[#1a1a1a] text-white text-sm font-medium hover:bg-[#2a2a2a] transition-colors"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#1a1a1a] text-white text-sm font-medium hover:bg-[#2a2a2a] transition-all hover:scale-[1.02] shadow-lg shadow-black/5"
           >
             <MessageSquare size={16} />
-            Start Research
+            Chat with Emily
           </Link>
-          <button className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-medium shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all">
+          <button className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-medium shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all hover:scale-[1.02]">
             <Sparkles size={16} />
             Create Asset
           </button>
