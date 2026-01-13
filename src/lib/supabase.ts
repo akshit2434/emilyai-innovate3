@@ -14,11 +14,11 @@ export const supabase = createClient(
 );
 
 // Server client with service role (bypasses RLS - use only in server actions!)
-// Requires SUPABASE_SERVICE_ROLE_KEY in .env.local
-export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
+// Requires SUPABASE_SECRET_KEY in .env.local
+export const supabaseAdmin = process.env.SUPABASE_SECRET_KEY
   ? createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_SECRET_KEY,
       { auth: { persistSession: false } }
     )
-  : supabase; // Fallback to regular client if no service key
+  : supabase; // Fallback to regular client if no secret key
