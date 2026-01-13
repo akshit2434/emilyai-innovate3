@@ -28,7 +28,7 @@ body {
 
 /* Subtle grid pattern */
 .bg-grid {
-  background-image: 
+  background-image:
     linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
   background-size: 48px 48px;
@@ -85,4 +85,221 @@ html {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
+}
+
+/* Floating input container */
+.floating-input-container {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 680px;
+  padding: 0 24px;
+  z-index: 20;
+}
+
+.floating-input {
+  position: relative;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.05),
+    0 12px 48px rgba(0, 0, 0, 0.03),
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+  padding: 6px;
+  transition: all 0.3s ease;
+}
+
+.floating-input:focus-within {
+  border-color: rgba(249, 115, 22, 0.3);
+  box-shadow:
+    0 4px 24px rgba(249, 115, 22, 0.08),
+    0 12px 48px rgba(249, 115, 22, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset,
+    0 0 40px rgba(249, 115, 22, 0.08);
+}
+
+/* Premium send button */
+.send-button {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f97316 0%, #ec4899 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.send-button::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(135deg, #f97316 0%, #ec4899 50%, #f97316 100%);
+  border-radius: 50%;
+  z-index: -1;
+  opacity: 0;
+  animation: gradient-rotate 3s linear infinite;
+  transition: opacity 0.3s ease;
+}
+
+.send-button:hover::before {
+  opacity: 1;
+}
+
+.send-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f97316 0%, #ec4899 100%);
+  z-index: 0;
+}
+
+.send-button:hover {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 20px rgba(249, 115, 22, 0.4),
+    0 0 40px rgba(236, 72, 153, 0.2);
+}
+
+.send-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.send-button:disabled::before {
+  display: none;
+}
+
+.send-button svg {
+  position: relative;
+  z-index: 1;
+  transition: transform 0.3s ease;
+}
+
+.send-button:hover svg {
+  transform: translateX(2px) rotate(-5deg);
+}
+
+@keyframes gradient-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.send-button.has-content:not(:disabled) {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.4), 0 0 50px rgba(236, 72, 153, 0.2);
+  }
+}
+
+/* Chat item selected state */
+.chat-item-selected {
+  background: rgba(249, 115, 22, 0.06) !important;
+  border-left: 2px solid #f97316;
+  margin-left: -2px;
+}
+
+.chat-item-selected .chat-title {
+  color: rgba(26, 26, 26, 0.9);
+}
+
+/* Dropdown menu */
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+  padding: 4px;
+  min-width: 140px;
+  z-index: 50;
+  animation: dropdown-in 0.15s ease-out;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  color: rgba(26, 26, 26, 0.7);
+}
+
+.dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.dropdown-item-danger {
+  color: #ef4444;
+}
+
+.dropdown-item-danger:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* Assistant avatar */
+.assistant-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f97316 0%, #ec4899 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.assistant-avatar-initial {
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  font-family: var(--font-playfair);
 }

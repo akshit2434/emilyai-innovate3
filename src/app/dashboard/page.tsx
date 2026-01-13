@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserButton, useUser } from "@clerk/nextjs";
 import {
   Plus,
@@ -18,14 +19,13 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-import { CreateProductModal } from "@/components/CreateProductModal";
 import { getProducts } from "@/app/actions/products";
 import { Product } from "@/types";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { user, isLoaded } = useUser();
   const [activeTab, setActiveTab] = useState("overview");
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
@@ -116,7 +116,7 @@ export default function DashboardPage() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => router.push("/dashboard/new")}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white font-medium text-xs shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all duration-300"
             >
               <Plus size={14} /> Create Product
@@ -194,7 +194,7 @@ export default function DashboardPage() {
                       {/* Create New Card */}
                       <motion.button
                         whileHover={{ scale: 1.01 }}
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={() => router.push("/dashboard/new")}
                         className="group flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all duration-500 min-h-[12rem]"
                       >
                         <div className="w-12 h-12 rounded-full border border-black/[0.06] flex items-center justify-center mb-4 group-hover:scale-110 group-hover:border-orange-300 transition-all duration-500">
@@ -259,10 +259,6 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      <CreateProductModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-      />
     </div>
   );
 }
