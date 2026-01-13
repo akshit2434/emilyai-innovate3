@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Send, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { chatWithOnboardingAgent } from "@/app/actions/products";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ export default function NewProductPage() {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [step, setStep] = useState<"ideation" | "confirm" | "done">("ideation");
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
+  const [createdProductId, setCreatedProductId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -81,9 +83,20 @@ export default function NewProductPage() {
 
         if (chunk?.toolResult?.success && chunk.toolResult.productId) {
           setStep("done");
-          setTimeout(() => {
-            router.push(`/dashboard/${chunk.toolResult.productId}`);
-          }, 1500);
+          setCreatedProductId(chunk.toolResult.productId);
+          
+          // Start countdown
+          let count = 5;
+          setRedirectCountdown(count);
+          const interval = setInterval(() => {
+            count--;
+            if (count <= 0) {
+              clearInterval(interval);
+              router.push(`/dashboard/${chunk.toolResult.productId}`);
+            } else {
+              setRedirectCountdown(count);
+            }
+          }, 1000);
         }
       }
     } catch (error) {
@@ -161,6 +174,22 @@ export default function NewProductPage() {
                   <Loader2 size={14} className="text-white animate-spin" />
                 </div>
                 <span className="text-[#1a1a1a]/30 text-xs font-[var(--font-jetbrains)]">thinking...</span>
+              </motion.div>
+            )}
+
+            {redirectCountdown !== null && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-50 to-pink-50 border border-orange-200/50"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center">
+                  <Sparkles size={14} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-[#1a1a1a]">Your brand is ready!</p>
+                  <p className="text-xs text-[#1a1a1a]/50">Redirecting in {redirectCountdown}s...</p>
+                </div>
               </motion.div>
             )}
             <div ref={messagesEndRef} />

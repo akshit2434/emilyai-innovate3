@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { agent } from "@/lib/agent";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
@@ -13,7 +13,7 @@ export async function createProduct(name: string, description: string, extracted
     throw new Error("Unauthorized");
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("products")
     .insert([
       {
@@ -41,7 +41,7 @@ export async function getProducts() {
     return [];
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("products")
     .select("*")
     .eq("user_id", userId)
@@ -63,7 +63,7 @@ export async function getProductById(productId: string) {
   }
 
   // Real products only
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("products")
     .select("*")
     .eq("id", productId)
@@ -108,13 +108,13 @@ export async function chatWithOnboardingAgent(messages: { role: string; content:
       for await (const chunk of resultStream) {
         if (chunk.agent?.messages) {
           const lastMsg = chunk.agent.messages[chunk.agent.messages.length - 1] as AIMessage;
-          if (lastMsg.content) {
-            finalContent = typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content);
-            stream.update({ content: finalContent });
-          }
           
-          if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
-            // Tool call detected
+          // Only stream text content, not tool calls
+          if (lastMsg.content && (!lastMsg.tool_calls || lastMsg.tool_calls.length === 0)) {
+            const content = typeof lastMsg.content === 'string' ? lastMsg.content : '';
+            if (content) {
+              stream.update({ content });
+            }
           }
         }
         

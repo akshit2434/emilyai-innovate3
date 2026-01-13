@@ -25,13 +25,18 @@ const llm = new ChatGoogleGenerativeAI({
 const saveProductInfoTool = tool(
   async ({ name, description, tagline, target_audience, value_proposition, industry }) => {
     console.log("Saving product info via tool:", { name, description });
-    const product = await createProduct(name, description, {
-      tagline,
-      target_audience,
-      value_proposition,
-      industry,
-    });
-    return JSON.stringify({ success: true, productId: product?.id, message: "Product created successfully." });
+    try {
+      const product = await createProduct(name, description, {
+        tagline,
+        target_audience,
+        value_proposition,
+        industry,
+      });
+      return JSON.stringify({ success: true, productId: product?.id, message: "Product created successfully." });
+    } catch (error: any) {
+      console.error("Tool error:", error.message);
+      return JSON.stringify({ success: false, error: error.message });
+    }
   },
   {
     name: "save_product_info",
