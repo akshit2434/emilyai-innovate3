@@ -15,13 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getProductById } from "@/app/actions/products";
-import { 
-  chatWithBrandAgent, 
-  getChatSessions, 
-  saveChatSession, 
-  getChatSessionById, 
-  updateChatSession 
-} from "@/app/actions/brand";
+import { chatWithBrandAgent, getChatSessions, saveChatSession, getChatSessionById } from "@/app/actions/brand";
 import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
 import { cn } from "@/lib/utils";
@@ -45,6 +39,7 @@ export default function ProductChatPage() {
   const searchParams = useSearchParams();
   const productId = params.productId as string;
   const initialPrompt = searchParams.get("prompt") || "";
+  const sessionIdFromUrl = searchParams.get("session");
 
   const [product, setProduct] = useState<Product | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
@@ -75,35 +70,24 @@ export default function ProductChatPage() {
         setProduct(productData);
         setChatHistory(sessionsData || []);
 
-        // Load initial session if param exists
-        const sessionId = searchParams.get("session");
-        if (sessionId) {
-          loadSession(sessionId);
+        // Load session from URL if provided
+        if (sessionIdFromUrl) {
+          const session = await getChatSessionById(sessionIdFromUrl);
+          if (session && session.messages) {
+            const loadedMessages: Message[] = session.messages.map((m: { role: string; content: string }, i: number) => ({
+              id: `loaded-${i}`,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            }));
+            setMessages(loadedMessages);
+            setSelectedChatId(sessionIdFromUrl);
+            setCurrentSessionId(sessionIdFromUrl);
+          }
         }
       }
     }
     loadData();
-  }, [productId]);
-
-  async function loadSession(sessionId: string) {
-    setIsThinking(true);
-    try {
-      const session = await getChatSessionById(sessionId);
-      if (session) {
-        setMessages(session.messages.map((m: any, i: number) => ({
-          id: `${sessionId}-${i}`,
-          role: m.role,
-          content: m.content
-        })));
-        setCurrentSessionId(sessionId);
-        setSelectedChatId(sessionId);
-      }
-    } catch (err) {
-      console.error("Failed to load session:", err);
-    } finally {
-      setIsThinking(false);
-    }
-  }
+  }, [productId, sessionIdFromUrl]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -130,6 +114,21 @@ export default function ProductChatPage() {
   const filteredHistory = chatHistory.filter((chat) =>
     chat.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Load a chat session when selected
+  async function loadChatSession(sessionId: string) {
+    const session = await getChatSessionById(sessionId);
+    if (session && session.messages) {
+      const loadedMessages: Message[] = session.messages.map((m: { role: string; content: string }, i: number) => ({
+        id: `loaded-${i}`,
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
+      setMessages(loadedMessages);
+      setSelectedChatId(sessionId);
+      setCurrentSessionId(sessionId);
+    }
+  }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -179,7 +178,7 @@ export default function ProductChatPage() {
           setProduct(updatedProduct);
         }
       }
-      // Save or update chat session after successful conversation
+      // Save chat session after successful conversation
       const finalMessages = await new Promise<Message[]>((resolve) => {
         setMessages((prev) => {
           resolve(prev);
@@ -187,29 +186,20 @@ export default function ProductChatPage() {
         });
       });
       
+      // Only save if there's actual user content (not just the initial greeting)
       const userMessages = finalMessages.filter(m => m.role === "user");
-      if (userMessages.length > 0) {
+      if (userMessages.length > 0 && !currentSessionId) {
+        const title = userMessages[0].content.slice(0, 50) + (userMessages[0].content.length > 50 ? "..." : "");
         try {
-          if (currentSessionId) {
-            // Update existing session
-            await updateChatSession(
-              currentSessionId,
-              finalMessages.map(m => ({ role: m.role, content: m.content }))
-            );
-          } else {
-            // Create new session
-            const title = userMessages[0].content.slice(0, 50) + (userMessages[0].content.length > 50 ? "..." : "");
-            const savedSession = await saveChatSession(
-              productId,
-              title,
-              finalMessages.map(m => ({ role: m.role, content: m.content }))
-            );
-            setCurrentSessionId(savedSession.id);
-            setSelectedChatId(savedSession.id);
-            setChatHistory(prev => [{ id: savedSession.id, title, created_at: new Date().toISOString() }, ...prev]);
-          }
+          const savedSession = await saveChatSession(
+            productId,
+            title,
+            finalMessages.map(m => ({ role: m.role, content: m.content }))
+          );
+          setCurrentSessionId(savedSession.id);
+          setChatHistory(prev => [{ id: savedSession.id, title, created_at: new Date().toISOString() }, ...prev]);
         } catch (err) {
-          console.error("Failed to save/update chat session:", err);
+          console.error("Failed to save chat session:", err);
         }
       }
     } catch (error) {
@@ -277,7 +267,7 @@ export default function ProductChatPage() {
                 )}
               >
                 <button
-                  onClick={() => loadSession(chat.id)}
+                  onClick={() => loadChatSession(chat.id)}
                   className="w-full flex items-start gap-2 pl-2 pr-6 py-2 rounded-lg text-left hover:bg-black/[0.02] transition-colors"
                 >
                   <div className="flex-1 min-w-0">

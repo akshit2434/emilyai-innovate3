@@ -108,6 +108,28 @@ export async function getChatSessions(productId: string) {
   return data || [];
 }
 
+// Get a single chat session by ID
+export async function getChatSessionById(sessionId: string) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("chat_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .single();
+
+  if (error) {
+    console.error("Error fetching chat session:", error);
+    return null;
+  }
+
+  return data;
+}
+
 // Save a chat session
 export async function saveChatSession(
   productId: string,
@@ -128,54 +150,6 @@ export async function saveChatSession(
 
   if (error) {
     console.error("Error saving chat session:", error);
-    throw new Error(error.message);
-  }
-
-  return data;
-}
-
-// Get single chat session
-export async function getChatSessionById(sessionId: string) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    throw new Error("Unauthorized");
-  }
-
-  const { data, error } = await supabase
-    .from("chat_sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .single();
-
-  if (error) {
-    console.error("Error fetching chat session:", error);
-    return null;
-  }
-
-  return data;
-}
-
-// Update chat session messages
-export async function updateChatSession(
-  sessionId: string,
-  messages: { role: string; content: string }[]
-) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    throw new Error("Unauthorized");
-  }
-
-  const { data, error } = await supabase
-    .from("chat_sessions")
-    .update({ messages, updated_at: new Date().toISOString() })
-    .eq("id", sessionId)
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Error updating chat session:", error);
     throw new Error(error.message);
   }
 
