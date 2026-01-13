@@ -240,6 +240,28 @@ const editImageTool = tool(
   }
 );
 
+// Video Ad Generation Tool
+const generateVideoAdTool = tool(
+  async ({ prompt, platform }) => {
+    console.log("[VIDEO TOOL] generate_video_ad called:", { prompt, platform });
+    // This tool signals that a video workflow should start
+    return JSON.stringify({
+      type: "video_workflow_request",
+      goal: prompt,
+      platform: platform || "instagram",
+      message: "Video ad workflow initiated. The user will see the storyline for approval.",
+    });
+  },
+  {
+    name: "generate_video_ad",
+    description: "Generate a short-form video ad (30-50 seconds). Use when user asks for: video, video ad, reel, TikTok, short, or any video content. This starts an interactive workflow.",
+    schema: z.object({
+      prompt: z.string().describe("Description of the video ad to create, including goal and style"),
+      platform: z.enum(["instagram", "tiktok", "youtube_shorts"]).optional().describe("Target platform"),
+    }),
+  }
+);
+
 const allTools = [
   updateBrandInfoTool,
   webSearchTool,
@@ -247,6 +269,7 @@ const allTools = [
   generateTwitterThreadTool,
   generateMarketingImageTool,
   editImageTool,
+  generateVideoAdTool,
 ];
 const toolNode = new ToolNode(allTools);
 
@@ -288,6 +311,12 @@ You seamlessly blend research, strategy, and content creation. Use any combinati
 - Users reference images as @image1, @image2, etc. when requesting edits
 - **IMPORTANT**: When a user mentions @image1, @image2, etc. and asks to edit/modify/change it, you MUST call the edit_image tool. Do NOT just say you edited it - actually call the tool!
 - Simply acknowledge that you've created/edited the image—don't share technical details
+
+**CRITICAL - VIDEO HANDLING:**
+- When users ask for video ads, reels, shorts, TikToks, or any video content, you MUST call the request_video_ad tool
+- Do NOT just describe what a video would look like - actually call the tool to start the workflow
+- The tool starts an interactive process where the user approves each step (storyline → storyboard → generation)
+- After calling the tool, briefly acknowledge that you're starting the video workflow
 
 **BUSINESS DIAGNOSIS APPROACH:**
 When user asks about business issues (conversions, growth, positioning, etc.):

@@ -15,13 +15,23 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getProductById } from "@/app/actions/products";
-import { chatWithBrandAgent, getChatSessions, saveChatSession, getChatSessionById, updateChatSession } from "@/app/actions/brand";
+import { 
+  chatWithBrandAgent, 
+  getChatSessions, 
+  saveChatSession, 
+  getChatSessionById, 
+  updateChatSession,
+  initiateVideoWorkflow,
+  continueVideoWorkflow 
+} from "@/app/actions/brand";
 import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
 import { cn } from "@/lib/utils";
 import { CinematicMessage } from "@/components/chat/CinematicMessage";
 import { ImageViewer } from "@/components/chat/ImageViewer";
 import { ToolStatusPill } from "@/components/chat/ToolStatusPill";
+import { VideoStoryboard } from "@/components/chat/VideoStoryboard";
+import type { VideoWorkflowState } from "@/lib/videoAgent";
 
 type ToolStatus = "processing" | "done" | "failed";
 
@@ -39,6 +49,7 @@ interface Message {
   role: "assistant" | "user";
   content: string;
   generatedImage?: GeneratedImage;
+  videoWorkflow?: VideoWorkflowState;
 }
 
 // For persistence - includes generatedImage
@@ -79,6 +90,7 @@ export default function ProductChatPage() {
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<Array<{ name: string; status: ToolStatus }>>([]);
   const [imageCounter, setImageCounter] = useState(0); // For @image1, @image2, etc.
+  const [videoWorkflowLoading, setVideoWorkflowLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -260,6 +272,30 @@ export default function ProductChatPage() {
               return next;
             });
           }
+          
+          // Handle video workflow request
+          if (chunk.toolResult.type === "video_workflow_request" && product) {
+            try {
+              // Start the video workflow
+              const videoState = await initiateVideoWorkflow(
+                productId,
+                product,
+                chunk.toolResult.goal
+              );
+              
+              setMessages((prev) => {
+                const next = [...prev];
+                const last = next.find((m) => m.id === assistantMessageId);
+                if (last) {
+                  last.videoWorkflow = videoState;
+                }
+                return next;
+              });
+            } catch (error) {
+              console.error("Failed to start video workflow:", error);
+            }
+          }
+          
           // Refresh product data if brand was updated
           if (chunk.toolResult.success) {
             const updatedProduct = await getProductById(productId);
@@ -473,6 +509,50 @@ export default function ProductChatPage() {
                             onRequestEdit={(imageRef) => {
                               setInput((prev) => prev + `${imageRef} `);
                               inputRef.current?.focus();
+                            }}
+                          />
+                        )}
+                        {msg.videoWorkflow && (
+                          <VideoStoryboard
+                            workflow={msg.videoWorkflow}
+                            isLoading={videoWorkflowLoading}
+                            onApprove={async () => {
+                              setVideoWorkflowLoading(true);
+                              try {
+                                const newState = await continueVideoWorkflow(
+                                  msg.videoWorkflow!,
+                                  "approve"
+                                );
+                                setMessages((prev) =>
+                                  prev.map((m) =>
+                                    m.id === msg.id
+                                      ? { ...m, videoWorkflow: newState }
+                                      : m
+                                  )
+                                );
+                              } catch (error) {
+                                console.error("Video workflow error:", error);
+                              }
+                              setVideoWorkflowLoading(false);
+                            }}
+                            onRegenerate={async () => {
+                              setVideoWorkflowLoading(true);
+                              try {
+                                const newState = await continueVideoWorkflow(
+                                  msg.videoWorkflow!,
+                                  "regenerate"
+                                );
+                                setMessages((prev) =>
+                                  prev.map((m) =>
+                                    m.id === msg.id
+                                      ? { ...m, videoWorkflow: newState }
+                                      : m
+                                  )
+                                );
+                              } catch (error) {
+                                console.error("Video workflow error:", error);
+                              }
+                              setVideoWorkflowLoading(false);
                             }}
                           />
                         )}

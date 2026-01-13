@@ -6,6 +6,11 @@ import { revalidatePath } from "next/cache";
 import { brandAgent } from "@/lib/brandAgent";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { createStreamableValue } from "@ai-sdk/rsc";
+import { 
+  startVideoWorkflow, 
+  continueVideoWorkflow as continueVideoWorkflowLib,
+  VideoWorkflowState 
+} from "@/lib/videoAgent";
 
 export async function updateProduct(productId: string, updates: any) {
   const { userId } = await auth();
@@ -321,4 +326,39 @@ export async function saveAsset(
 
   revalidatePath(`/dashboard/${productId}`);
   return data;
+}
+
+// ============================================================================
+// Video Workflow Actions
+// ============================================================================
+
+// Start a new video workflow
+export async function initiateVideoWorkflow(
+  productId: string,
+  productContext: any,
+  userRequest: string
+): Promise<VideoWorkflowState> {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const state = await startVideoWorkflow(productContext, userRequest);
+  return state;
+}
+
+// Continue video workflow with user action
+export async function continueVideoWorkflow(
+  workflowState: VideoWorkflowState,
+  action: "approve" | "regenerate"
+): Promise<VideoWorkflowState> {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const newState = await continueVideoWorkflowLib(workflowState, action);
+  return newState;
 }
