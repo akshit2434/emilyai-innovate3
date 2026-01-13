@@ -1,8 +1,12 @@
-// Video Ad Generation Agent - Multi-step workflow
+// Video Workflow LangGraph Agent
+// Separate agent for video mode with conversational editing
 
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { BaseMessage, AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 
 // ============================================================================
 // Types
@@ -14,20 +18,6 @@ export interface VideoClip {
   duration: 4 | 6 | 8;
   description: string;
   isContinuation: boolean;
-}
-
-export interface FramePrompt {
-  clipId: string;
-  clipIndex: number;
-  startFrame: string | null; // null if continuation
-  endFrame: string;
-}
-
-export interface GeneratedFrame {
-  clipId: string;
-  startFrameUrl: string | null;
-  endFrameUrl: string | null;
-  status: "pending" | "generating" | "done";
 }
 
 export interface VideoStoryline {
@@ -43,255 +33,409 @@ export interface VideoStoryboard {
   totalDuration: number;
 }
 
+export interface GeneratedFrame {
+  clipId: string;
+  startFrameUrl: string | null;
+  endFrameUrl: string | null;
+  status: "pending" | "generating" | "done";
+}
+
 export interface VideoWorkflowState {
   id: string;
-  stage: "storyline" | "storyboard" | "frame_prompts" | "generating" | "complete";
+  stage: "storyline" | "storyboard" | "generating" | "complete" | "cancelled";
   productContext: any;
   userRequest: string;
   storyline: VideoStoryline | null;
   storyboard: VideoStoryboard | null;
-  framePrompts: FramePrompt[];
   generatedFrames: GeneratedFrame[];
   videoUrl: string | null;
   error: string | null;
 }
 
 // ============================================================================
-// LLM Configuration
+// LangGraph State
 // ============================================================================
 
-const videoLlm = new ChatGoogleGenerativeAI({
+const VideoAgentState = Annotation.Root({
+  messages: Annotation<BaseMessage[]>({
+    reducer: (x, y) => x.concat(y),
+    default: () => [],
+  }),
+  workflow: Annotation<VideoWorkflowState>({
+    reducer: (x, y) => ({ ...x, ...y }),
+    default: () => ({
+      id: "",
+      stage: "storyline" as const,
+      productContext: null,
+      userRequest: "",
+      storyline: null,
+      storyboard: null,
+      generatedFrames: [],
+      videoUrl: null,
+      error: null,
+    }),
+  }),
+  product: Annotation<any>({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
+  }),
+});
+
+// ============================================================================
+// LLM
+// ============================================================================
+
+const llm = new ChatGoogleGenerativeAI({
   model: "gemini-2.0-flash",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.8,
+  streaming: true,
   maxOutputTokens: 4096,
 });
 
 // ============================================================================
-// Workflow Functions
+// Video-Specific Tools
 // ============================================================================
 
-/**
- * Step 1: Create the storyline/theme based on brand context
- */
-export async function createStoryline(
+const updateStorylineTool = tool(
+  async ({ theme, hook, narrative, duration }) => {
+    console.log("[VIDEO AGENT] update_storyline:", { theme, hook });
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "update_storyline",
+      updates: { theme, hook, narrative, estimatedDuration: duration },
+      message: "Storyline updated successfully.",
+    });
+  },
+  {
+    name: "update_storyline",
+    description: "Update the video storyline (theme, hook, narrative, or duration). Use when user wants to change the concept.",
+    schema: z.object({
+      theme: z.string().optional().describe("New theme for the video"),
+      hook: z.string().optional().describe("New hook (first 3 seconds)"),
+      narrative: z.string().optional().describe("New narrative arc"),
+      duration: z.number().optional().describe("New estimated duration in seconds"),
+    }),
+  }
+);
+
+const updateClipTool = tool(
+  async ({ clipIndex, description, duration, isContinuation }) => {
+    console.log("[VIDEO AGENT] update_clip:", { clipIndex, description, duration });
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "update_clip",
+      clipIndex,
+      updates: { description, duration, isContinuation },
+      message: `Clip ${clipIndex} updated.`,
+    });
+  },
+  {
+    name: "update_clip",
+    description: "Update a specific clip in the storyboard. User may reference by number like 'clip 3' or 'the first clip'.",
+    schema: z.object({
+      clipIndex: z.number().describe("The clip number (1-based index)"),
+      description: z.string().optional().describe("New description for the clip"),
+      duration: z.enum(["4", "6", "8"]).optional().describe("New duration in seconds"),
+      isContinuation: z.boolean().optional().describe("Whether this continues from previous clip"),
+    }),
+  }
+);
+
+const addClipTool = tool(
+  async ({ afterClipIndex, description, duration }) => {
+    console.log("[VIDEO AGENT] add_clip:", { afterClipIndex, description, duration });
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "add_clip",
+      afterClipIndex,
+      newClip: { description, duration: parseInt(duration) },
+      message: `New clip added after clip ${afterClipIndex}.`,
+    });
+  },
+  {
+    name: "add_clip",
+    description: "Add a new clip to the storyboard after a specified position.",
+    schema: z.object({
+      afterClipIndex: z.number().describe("Insert after this clip number (0 to add at beginning)"),
+      description: z.string().describe("Description of the new clip"),
+      duration: z.enum(["4", "6", "8"]).describe("Duration in seconds"),
+    }),
+  }
+);
+
+const removeClipTool = tool(
+  async ({ clipIndex }) => {
+    console.log("[VIDEO AGENT] remove_clip:", { clipIndex });
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "remove_clip",
+      clipIndex,
+      message: `Clip ${clipIndex} removed.`,
+    });
+  },
+  {
+    name: "remove_clip",
+    description: "Remove a clip from the storyboard.",
+    schema: z.object({
+      clipIndex: z.number().describe("The clip number to remove (1-based index)"),
+    }),
+  }
+);
+
+const proceedToNextStageTool = tool(
+  async ({}) => {
+    console.log("[VIDEO AGENT] proceed_to_next_stage");
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "proceed",
+      message: "Moving to next stage.",
+    });
+  },
+  {
+    name: "proceed_to_next_stage",
+    description: "Move forward to the next stage of video creation. Use when user approves current stage or says 'continue', 'next', 'looks good', etc.",
+    schema: z.object({}),
+  }
+);
+
+const goBackStageTool = tool(
+  async ({}) => {
+    console.log("[VIDEO AGENT] go_back_stage");
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "go_back",
+      message: "Going back to previous stage.",
+    });
+  },
+  {
+    name: "go_back_stage",
+    description: "Go back to the previous stage. Use when user says 'go back', 'redo', 'start over', etc.",
+    schema: z.object({}),
+  }
+);
+
+const cancelWorkflowTool = tool(
+  async ({}) => {
+    console.log("[VIDEO AGENT] cancel_workflow");
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "cancel",
+      message: "Video workflow cancelled.",
+    });
+  },
+  {
+    name: "cancel_workflow",
+    description: "Cancel the video workflow and return to normal chat. Use when user says 'cancel', 'nevermind', 'stop', 'exit', etc.",
+    schema: z.object({}),
+  }
+);
+
+const finalizeVideoTool = tool(
+  async ({}) => {
+    console.log("[VIDEO AGENT] finalize_video");
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "finalize",
+      message: "Starting video generation...",
+    });
+  },
+  {
+    name: "finalize_video",
+    description: "Finalize and generate the video. Use when user approves the storyboard and wants to create the final video.",
+    schema: z.object({}),
+  }
+);
+
+const videoTools = [
+  updateStorylineTool,
+  updateClipTool,
+  addClipTool,
+  removeClipTool,
+  proceedToNextStageTool,
+  goBackStageTool,
+  cancelWorkflowTool,
+  finalizeVideoTool,
+];
+
+const videoToolNode = new ToolNode(videoTools);
+
+// ============================================================================
+// Agent Logic
+// ============================================================================
+
+const callVideoModel = async (state: typeof VideoAgentState.State) => {
+  const { messages, workflow, product } = state;
+  
+  // Build context about current workflow state
+  const workflowContext = buildWorkflowContext(workflow);
+  
+  const systemPrompt = new SystemMessage(`
+You are a video ad creative director helping create a short-form video ad for "${product?.name}".
+
+**CURRENT WORKFLOW STATE:**
+${workflowContext}
+
+**YOUR TOOLS:**
+- update_storyline: Modify theme/hook/narrative
+- update_clip: Edit a specific clip
+- add_clip: Add a new clip
+- remove_clip: Delete a clip
+- proceed_to_next_stage: Move forward when user approves
+- go_back_stage: Return to previous stage
+- cancel_workflow: Exit video mode
+- finalize_video: Complete and generate
+
+**BEHAVIOR:**
+- Understand natural language references like "clip 3", "the hook", "make it shorter"
+- When user seems happy (says "good", "nice", "continue"), use proceed_to_next_stage
+- When user wants to exit (says "cancel", "nevermind"), use cancel_workflow
+- After making changes, briefly confirm what you did
+
+**STYLE:** Creative, collaborative, concise. Help the user refine their video vision.
+  `);
+
+  const modelWithTools = llm.bindTools(videoTools);
+  const response = await modelWithTools.invoke([systemPrompt, ...messages]);
+  return { messages: [response] };
+};
+
+function buildWorkflowContext(workflow: VideoWorkflowState): string {
+  let context = `Stage: ${workflow.stage.toUpperCase()}\n`;
+  
+  if (workflow.storyline) {
+    context += `\nSTORYLINE:\n`;
+    context += `- Theme: ${workflow.storyline.theme}\n`;
+    context += `- Hook: "${workflow.storyline.hook}"\n`;
+    context += `- Narrative: ${workflow.storyline.narrative}\n`;
+    context += `- Duration: ~${workflow.storyline.estimatedDuration}s\n`;
+    context += `- Platform: ${workflow.storyline.targetPlatform}\n`;
+  }
+  
+  if (workflow.storyboard) {
+    context += `\nSTORYBOARD (${workflow.storyboard.clips.length} clips, ${workflow.storyboard.totalDuration}s total):\n`;
+    workflow.storyboard.clips.forEach((clip) => {
+      context += `${clip.index}. [${clip.duration}s${clip.isContinuation ? ", continues" : ""}] ${clip.description}\n`;
+    });
+  }
+  
+  return context;
+}
+
+const shouldContinue = (state: typeof VideoAgentState.State) => {
+  const { messages } = state;
+  const lastMessage = messages[messages.length - 1] as AIMessage;
+  
+  if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+    console.log(`[videoAgent] Calling ${lastMessage.tool_calls.length} tools`);
+    return "tools";
+  }
+  return END;
+};
+
+// ============================================================================
+// Compile Graph
+// ============================================================================
+
+const videoWorkflow = new StateGraph(VideoAgentState)
+  .addNode("agent", callVideoModel)
+  .addNode("tools", videoToolNode)
+  .addEdge(START, "agent")
+  .addConditionalEdges("agent", shouldContinue)
+  .addEdge("tools", "agent");
+
+export const videoAgent = videoWorkflow.compile();
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+export async function createInitialStoryline(
   productContext: any,
   userRequest: string
 ): Promise<VideoStoryline> {
-  const systemPrompt = `You are an elite video ad creative director specializing in short-form content for Instagram Reels, TikTok, and YouTube Shorts.
+  const storyLlm = new ChatGoogleGenerativeAI({
+    model: "gemini-2.0-flash",
+    apiKey: process.env.GOOGLE_GENAI_API_KEY,
+    temperature: 0.8,
+  });
 
-Your task is to create a compelling storyline/theme for a video ad.
+  const systemPrompt = `Create a video ad concept for "${productContext?.name}".
+User request: ${userRequest}
 
-BRAND CONTEXT:
-- Name: ${productContext?.name || "Unknown"}
-- Description: ${productContext?.description || "Not provided"}
-- Target Audience: ${productContext?.extracted_info?.target_audience || "General"}
-- Value Proposition: ${productContext?.extracted_info?.value_proposition || "Not specified"}
-- Industry: ${productContext?.extracted_info?.industry || "Not specified"}
-
-USER REQUEST: ${userRequest}
-
-Create a video ad concept. Your response MUST be valid JSON with this exact structure:
+Return JSON only:
 {
-  "theme": "One-line theme description",
-  "hook": "The attention-grabbing first 3 seconds hook",
-  "narrative": "2-3 sentence narrative arc description",
+  "theme": "one-line theme",
+  "hook": "attention-grabbing first 3 seconds",
+  "narrative": "2-3 sentence arc",
   "estimatedDuration": 40,
-  "targetPlatform": "instagram"
-}
+  "targetPlatform": "tiktok"
+}`;
 
-GUIDELINES:
-- Duration should be 30-50 seconds (optimal for engagement)
-- Hook must grab attention in first 3 seconds
-- Theme should align with brand values
-- Narrative should have clear beginning, middle, end
-- Target platform should match the content style
-
-Respond ONLY with the JSON, no markdown or explanation.`;
-
-  const response = await videoLlm.invoke([
+  const response = await storyLlm.invoke([
     new SystemMessage(systemPrompt),
-    new HumanMessage("Create the video ad storyline now."),
+    new HumanMessage("Create the concept now."),
   ]);
 
   try {
     const content = typeof response.content === "string" ? response.content : "";
-    // Clean up potential markdown code blocks
-    const cleanedContent = content.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleanedContent);
-  } catch (e) {
-    console.error("Failed to parse storyline response:", e);
-    // Return default
+    return JSON.parse(content.replace(/```json\n?|\n?```/g, "").trim());
+  } catch {
     return {
       theme: "Brand showcase",
       hook: "Discover something amazing",
       narrative: "A journey through the brand experience",
       estimatedDuration: 40,
-      targetPlatform: "instagram",
+      targetPlatform: "tiktok",
     };
   }
 }
 
-/**
- * Step 2: Create the storyboard with clip breakdown
- */
-export async function createStoryboard(
+export async function createInitialStoryboard(
   productContext: any,
   storyline: VideoStoryline
 ): Promise<VideoStoryboard> {
-  const systemPrompt = `You are a video storyboard artist. Break down this video ad concept into individual clips.
+  const storyLlm = new ChatGoogleGenerativeAI({
+    model: "gemini-2.0-flash",
+    apiKey: process.env.GOOGLE_GENAI_API_KEY,
+    temperature: 0.8,
+  });
 
-BRAND: ${productContext?.name}
-THEME: ${storyline.theme}
-HOOK: ${storyline.hook}
-NARRATIVE: ${storyline.narrative}
-TARGET DURATION: ${storyline.estimatedDuration} seconds
+  const systemPrompt = `Break down this video concept into clips (4s, 6s, or 8s each).
+Brand: ${productContext?.name}
+Theme: ${storyline.theme}
+Duration: ~${storyline.estimatedDuration}s
 
-Create a clip breakdown. Each clip can be 4, 6, or 8 seconds.
-Mark clips that are visual continuations of the previous clip (same scene, camera keeps rolling).
-
-Your response MUST be valid JSON with this exact structure:
+Return JSON only:
 {
-  "clips": [
-    {
-      "id": "clip_1",
-      "index": 1,
-      "duration": 4,
-      "description": "What happens in this clip",
-      "isContinuation": false
-    }
-  ],
+  "clips": [{"id": "clip_1", "index": 1, "duration": 4, "description": "...", "isContinuation": false}],
   "totalDuration": 40
-}
+}`;
 
-GUIDELINES:
-- First clip should be the hook (4s recommended for impact)
-- Use continuation for smooth flowing scenes
-- Total duration should match target ± 4 seconds
-- 5-8 clips is optimal for short-form content
-- Mix durations for rhythm (not all same length)
-
-Respond ONLY with the JSON, no markdown or explanation.`;
-
-  const response = await videoLlm.invoke([
+  const response = await storyLlm.invoke([
     new SystemMessage(systemPrompt),
-    new HumanMessage("Create the storyboard breakdown now."),
+    new HumanMessage("Create the storyboard now."),
   ]);
 
   try {
     const content = typeof response.content === "string" ? response.content : "";
-    const cleanedContent = content.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleanedContent);
-  } catch (e) {
-    console.error("Failed to parse storyboard response:", e);
-    // Return default 40s storyboard
+    return JSON.parse(content.replace(/```json\n?|\n?```/g, "").trim());
+  } catch {
     return {
       clips: [
-        { id: "clip_1", index: 1, duration: 4, description: "Hook - attention grabber", isContinuation: false },
-        { id: "clip_2", index: 2, duration: 6, description: "Problem introduction", isContinuation: false },
+        { id: "clip_1", index: 1, duration: 4, description: "Hook - attention grab", isContinuation: false },
+        { id: "clip_2", index: 2, duration: 6, description: "Problem/need", isContinuation: false },
         { id: "clip_3", index: 3, duration: 8, description: "Solution reveal", isContinuation: false },
-        { id: "clip_4", index: 4, duration: 6, description: "Benefits showcase", isContinuation: true },
+        { id: "clip_4", index: 4, duration: 6, description: "Benefits", isContinuation: true },
         { id: "clip_5", index: 5, duration: 8, description: "Social proof", isContinuation: false },
-        { id: "clip_6", index: 6, duration: 4, description: "Call to action", isContinuation: false },
-        { id: "clip_7", index: 7, duration: 4, description: "Brand logo", isContinuation: true },
+        { id: "clip_6", index: 6, duration: 4, description: "CTA", isContinuation: false },
       ],
-      totalDuration: 40,
+      totalDuration: 36,
     };
   }
 }
 
-/**
- * Step 3: Generate frame prompts for each clip
- */
-export async function generateFramePrompts(
-  productContext: any,
-  storyline: VideoStoryline,
-  storyboard: VideoStoryboard
-): Promise<FramePrompt[]> {
-  const clipsDescription = storyboard.clips
-    .map((c) => `Clip ${c.index} (${c.duration}s, ${c.isContinuation ? "continuation" : "new scene"}): ${c.description}`)
-    .join("\n");
-
-  const systemPrompt = `You are a visual prompt engineer for AI video generation.
-
-BRAND: ${productContext?.name}
-THEME: ${storyline.theme}
-PLATFORM: ${storyline.targetPlatform}
-
-STORYBOARD:
-${clipsDescription}
-
-For each clip, create detailed visual prompts for:
-- START FRAME: First frame of the clip (skip if isContinuation is true)
-- END FRAME: Last frame of the clip
-
-Your response MUST be valid JSON array:
-[
-  {
-    "clipId": "clip_1",
-    "clipIndex": 1,
-    "startFrame": "Detailed prompt for start frame...",
-    "endFrame": "Detailed prompt for end frame..."
-  }
-]
-
-For continuation clips, set startFrame to null.
-
-PROMPT GUIDELINES:
-- Be visually specific (lighting, angle, mood)
-- Include brand colors/aesthetic where relevant
-- Describe motion direction for transitions
-- Keep prompts under 100 words each
-
-Respond ONLY with the JSON array, no markdown or explanation.`;
-
-  const response = await videoLlm.invoke([
-    new SystemMessage(systemPrompt),
-    new HumanMessage("Generate the frame prompts now."),
-  ]);
-
-  try {
-    const content = typeof response.content === "string" ? response.content : "";
-    const cleanedContent = content.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleanedContent);
-  } catch (e) {
-    console.error("Failed to parse frame prompts response:", e);
-    // Return defaults
-    return storyboard.clips.map((clip) => ({
-      clipId: clip.id,
-      clipIndex: clip.index,
-      startFrame: clip.isContinuation ? null : `Opening frame for ${clip.description}`,
-      endFrame: `Closing frame for ${clip.description}`,
-    }));
-  }
-}
-
-/**
- * Step 4: Mock frame generation (returns stock images)
- */
-export async function mockGenerateFrames(
-  framePrompts: FramePrompt[]
-): Promise<GeneratedFrame[]> {
-  const stockImages = [
-    "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=400&q=80",
-    "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400&q=80",
-    "https://images.unsplash.com/photo-1551434678-e076c223a692?w=400&q=80",
-    "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&q=80",
-    "https://images.unsplash.com/photo-1553877522-43269d4ea984?w=400&q=80",
-  ];
-
-  return framePrompts.map((fp, i) => ({
-    clipId: fp.clipId,
-    startFrameUrl: fp.startFrame ? stockImages[i % stockImages.length] : null,
-    endFrameUrl: stockImages[(i + 1) % stockImages.length],
-    status: "done" as const,
-  }));
-}
-
-/**
- * Create initial workflow state
- */
-export function createVideoWorkflow(
+export function createNewVideoWorkflow(
   productContext: any,
   userRequest: string
 ): VideoWorkflowState {
@@ -302,93 +446,8 @@ export function createVideoWorkflow(
     userRequest,
     storyline: null,
     storyboard: null,
-    framePrompts: [],
     generatedFrames: [],
     videoUrl: null,
     error: null,
   };
-}
-
-/**
- * Continue workflow to next stage
- */
-export async function continueVideoWorkflow(
-  state: VideoWorkflowState,
-  action: "approve" | "regenerate"
-): Promise<VideoWorkflowState> {
-  const newState = { ...state };
-
-  try {
-    switch (state.stage) {
-      case "storyline":
-        if (action === "approve" && state.storyline) {
-          // Move to storyboard creation
-          const storyboard = await createStoryboard(state.productContext, state.storyline);
-          newState.storyboard = storyboard;
-          newState.stage = "storyboard";
-        } else if (action === "regenerate") {
-          // Regenerate storyline
-          const storyline = await createStoryline(state.productContext, state.userRequest);
-          newState.storyline = storyline;
-        }
-        break;
-
-      case "storyboard":
-        if (action === "approve" && state.storyline && state.storyboard) {
-          // Generate frame prompts
-          const framePrompts = await generateFramePrompts(
-            state.productContext,
-            state.storyline,
-            state.storyboard
-          );
-          newState.framePrompts = framePrompts;
-          newState.stage = "generating";
-          
-          // Immediately generate frames and complete
-          const generatedFrames = await mockGenerateFrames(framePrompts);
-          newState.generatedFrames = generatedFrames;
-          newState.videoUrl = "https://example.com/mock-video.mp4";
-          newState.stage = "complete";
-        } else if (action === "regenerate" && state.storyline) {
-          // Regenerate storyboard
-          const storyboard = await createStoryboard(state.productContext, state.storyline);
-          newState.storyboard = storyboard;
-        }
-        break;
-
-      case "frame_prompts":
-        // Auto-proceed to generation (no approval needed for prompts)
-        const generatedFrames = await mockGenerateFrames(state.framePrompts);
-        newState.generatedFrames = generatedFrames;
-        newState.stage = "generating";
-        // Mock video URL
-        newState.videoUrl = "https://example.com/mock-video.mp4";
-        newState.stage = "complete";
-        break;
-
-      default:
-        break;
-    }
-  } catch (error: any) {
-    console.error("Video workflow error:", error);
-    newState.error = error.message;
-  }
-
-  return newState;
-}
-
-/**
- * Start video workflow and return initial storyline
- */
-export async function startVideoWorkflow(
-  productContext: any,
-  userRequest: string
-): Promise<VideoWorkflowState> {
-  const state = createVideoWorkflow(productContext, userRequest);
-  
-  // Generate initial storyline
-  const storyline = await createStoryline(productContext, userRequest);
-  state.storyline = storyline;
-  
-  return state;
 }

@@ -40,6 +40,18 @@ body {
   background-size: 24px 24px;
 }
 
+/* Video mode premium grid - subtle dots on dark background */
+.bg-video-mode-grid {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Video mode orange grid - dots on light orange background */
+.bg-video-mode-orange-grid {
+  background-image: radial-gradient(circle, rgba(249, 115, 22, 0.08) 1.5px, transparent 1.5px);
+  background-size: 28px 28px;
+}
+
 /* Gradient blur orbs */
 .blur-orb-orange {
   position: absolute;

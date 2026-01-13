@@ -9,6 +9,7 @@ interface CinematicMessageProps {
   content: string;
   isAssistant?: boolean;
   isLoaded?: boolean;
+  isVideoMode?: boolean;
 }
 
 // Tracks how many words have already been animated globally per message
@@ -115,7 +116,7 @@ const AnimatedChildren = ({ children, startAnimatingFrom, getNextWordIndex }: An
   );
 };
 
-export const CinematicMessage = React.memo(({ content, isAssistant = true, isLoaded = false }: CinematicMessageProps) => {
+export const CinematicMessage = React.memo(({ content, isAssistant = true, isLoaded = false, isVideoMode = false }: CinematicMessageProps) => {
   // Count total words in content for the tracker
   const totalWords = useMemo(() => {
     return content.split(/\s+/).filter(word => word.trim() !== "").length;

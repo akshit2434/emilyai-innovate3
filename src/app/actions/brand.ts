@@ -6,11 +6,6 @@ import { revalidatePath } from "next/cache";
 import { brandAgent } from "@/lib/brandAgent";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { createStreamableValue } from "@ai-sdk/rsc";
-import { 
-  startVideoWorkflow, 
-  continueVideoWorkflow as continueVideoWorkflowLib,
-  VideoWorkflowState 
-} from "@/lib/videoAgent";
 
 export async function updateProduct(productId: string, updates: any) {
   const { userId } = await auth();
@@ -332,7 +327,15 @@ export async function saveAsset(
 // Video Workflow Actions
 // ============================================================================
 
-// Start a new video workflow
+import { 
+  videoAgent,
+  createInitialStoryline,
+  createInitialStoryboard,
+  createNewVideoWorkflow,
+  VideoWorkflowState 
+} from "@/lib/videoAgent";
+
+// Start a new video workflow - creates initial storyline
 export async function initiateVideoWorkflow(
   productId: string,
   productContext: any,
@@ -344,14 +347,239 @@ export async function initiateVideoWorkflow(
     throw new Error("Unauthorized");
   }
 
-  const state = await startVideoWorkflow(productContext, userRequest);
-  return state;
+  // Create workflow and generate initial storyline
+  const workflow = createNewVideoWorkflow(productContext, userRequest);
+  const storyline = await createInitialStoryline(productContext, userRequest);
+  workflow.storyline = storyline;
+  
+  return workflow;
 }
 
-// Continue video workflow with user action
-export async function continueVideoWorkflow(
-  workflowState: VideoWorkflowState,
-  action: "approve" | "regenerate"
+// Chat with video agent - for conversational editing
+export async function chatWithVideoAgent(
+  productId: string,
+  messages: { role: string; content: string }[],
+  workflow: VideoWorkflowState,
+  productContext: any
+) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const stream = createStreamableValue<any>();
+  const DEBUG = true;
+
+  (async () => {
+    try {
+      if (DEBUG) {
+        console.log("\n=== VIDEO AGENT DEBUG ===");
+        console.log("Messages:", messages.map(m => ({ role: m.role, content: m.content?.slice(0, 40) })));
+        console.log("Workflow stage:", workflow.stage);
+      }
+
+      const langchainMessages = messages.map((m) =>
+        m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content)
+      );
+
+      const resultStream = await videoAgent.stream(
+        {
+          messages: langchainMessages,
+          workflow,
+          product: productContext,
+        },
+        { streamMode: "updates" }
+      );
+
+      let updatedWorkflow = { ...workflow };
+      let accumulatedText = "";
+
+      for await (const chunk of resultStream) {
+        if (DEBUG) {
+          console.log("\n[VIDEO CHUNK]", Object.keys(chunk));
+        }
+
+        // Stream agent messages
+        if (chunk.agent?.messages) {
+          const agentMsg = chunk.agent.messages[chunk.agent.messages.length - 1];
+          
+          if (DEBUG) {
+            console.log("  Agent msg type:", agentMsg.constructor.name);
+            console.log("  Has content:", !!agentMsg.content);
+            console.log("  Content preview:", typeof agentMsg.content === 'string' ? agentMsg.content?.slice(0, 60) : '[non-string]');
+            console.log("  Has tool_calls:", agentMsg.tool_calls?.length || 0);
+          }
+
+          // Stream text content
+          if (agentMsg.content && typeof agentMsg.content === "string" && agentMsg.content.trim()) {
+            accumulatedText += agentMsg.content;
+            stream.update({ text: agentMsg.content, done: false });
+          }
+          
+          // Also show tool call status
+          if (agentMsg.tool_calls && agentMsg.tool_calls.length > 0) {
+            for (const tc of agentMsg.tool_calls) {
+              if (DEBUG) console.log("  Tool call:", tc.name);
+              stream.update({ 
+                toolCall: { name: tc.name, status: "processing" }
+              });
+            }
+          }
+        }
+
+        // Handle tool results
+        if (chunk.tools?.messages) {
+          const toolMsg = chunk.tools.messages[chunk.tools.messages.length - 1];
+          if (DEBUG) {
+            console.log("  Tool result for:", toolMsg.name);
+            console.log("  Result preview:", String(toolMsg.content).slice(0, 80));
+          }
+          if (toolMsg.content) {
+            try {
+              const result = JSON.parse(toolMsg.content as string);
+              
+              // Apply workflow updates based on tool result
+              if (result.type === "workflow_update") {
+                updatedWorkflow = applyWorkflowUpdate(updatedWorkflow, result);
+                
+                // Use the tool's message as AI response if no text was accumulated
+                if (result.message && !accumulatedText) {
+                  accumulatedText = result.message;
+                  stream.update({ text: result.message, done: false });
+                }
+              }
+              
+              stream.update({ 
+                toolResult: result,
+                toolCall: { name: toolMsg.name || "unknown", status: "done" },
+                workflow: updatedWorkflow,
+              });
+            } catch (e) {
+              console.error("Failed to parse tool result:", e);
+            }
+          }
+        }
+      }
+
+      if (DEBUG) {
+        console.log("\n=== VIDEO STREAM COMPLETE ===");
+        console.log("Final text:", accumulatedText?.slice(0, 100));
+        console.log("Final stage:", updatedWorkflow.stage);
+      }
+
+      stream.update({ done: true, workflow: updatedWorkflow });
+      stream.done();
+    } catch (error: any) {
+      console.error("Video agent error:", error);
+      stream.error(error);
+    }
+  })();
+
+  return stream.value;
+}
+
+// Apply workflow updates based on tool results
+function applyWorkflowUpdate(
+  workflow: VideoWorkflowState,
+  toolResult: any
+): VideoWorkflowState {
+  const updated = { ...workflow };
+  
+  switch (toolResult.action) {
+    case "update_storyline":
+      if (updated.storyline) {
+        updated.storyline = { ...updated.storyline, ...toolResult.updates };
+      }
+      break;
+      
+    case "update_clip":
+      if (updated.storyboard) {
+        const clipIdx = toolResult.clipIndex - 1;
+        if (updated.storyboard.clips[clipIdx]) {
+          updated.storyboard.clips[clipIdx] = {
+            ...updated.storyboard.clips[clipIdx],
+            ...toolResult.updates,
+            duration: toolResult.updates.duration 
+              ? parseInt(toolResult.updates.duration) 
+              : updated.storyboard.clips[clipIdx].duration,
+          };
+          // Recalculate total duration
+          updated.storyboard.totalDuration = updated.storyboard.clips.reduce(
+            (sum, c) => sum + c.duration, 0
+          );
+        }
+      }
+      break;
+      
+    case "add_clip":
+      if (updated.storyboard) {
+        const newClip = {
+          id: `clip_${Date.now()}`,
+          index: toolResult.afterClipIndex + 1,
+          duration: toolResult.newClip.duration as 4 | 6 | 8,
+          description: toolResult.newClip.description,
+          isContinuation: false,
+        };
+        updated.storyboard.clips.splice(toolResult.afterClipIndex, 0, newClip);
+        // Reindex and recalculate
+        updated.storyboard.clips.forEach((c, i) => c.index = i + 1);
+        updated.storyboard.totalDuration = updated.storyboard.clips.reduce(
+          (sum, c) => sum + c.duration, 0
+        );
+      }
+      break;
+      
+    case "remove_clip":
+      if (updated.storyboard) {
+        updated.storyboard.clips = updated.storyboard.clips.filter(
+          (_, i) => i !== toolResult.clipIndex - 1
+        );
+        updated.storyboard.clips.forEach((c, i) => c.index = i + 1);
+        updated.storyboard.totalDuration = updated.storyboard.clips.reduce(
+          (sum, c) => sum + c.duration, 0
+        );
+      }
+      break;
+      
+    case "proceed":
+      console.log("[WORKFLOW] Proceed from:", updated.stage);
+      if (updated.stage === "storyline") {
+        updated.stage = "storyboard";
+      } else if (updated.stage === "storyboard") {
+        updated.stage = "generating";
+      } else if (updated.stage === "generating") {
+        // Finalize when proceeding from generating
+        updated.stage = "complete";
+        updated.videoUrl = "https://example.com/mock-video.mp4";
+      }
+      console.log("[WORKFLOW] Proceed to:", updated.stage);
+      break;
+      
+    case "go_back":
+      if (updated.stage === "storyboard") {
+        updated.stage = "storyline";
+      } else if (updated.stage === "generating") {
+        updated.stage = "storyboard";
+      }
+      break;
+      
+    case "cancel":
+      updated.stage = "cancelled";
+      break;
+      
+    case "finalize":
+      updated.stage = "complete";
+      updated.videoUrl = "https://example.com/mock-video.mp4";
+      break;
+  }
+  
+  return updated;
+}
+
+// Generate storyboard for workflow
+export async function generateStoryboardForWorkflow(
+  workflow: VideoWorkflowState
 ): Promise<VideoWorkflowState> {
   const { userId } = await auth();
 
@@ -359,6 +587,18 @@ export async function continueVideoWorkflow(
     throw new Error("Unauthorized");
   }
 
-  const newState = await continueVideoWorkflowLib(workflowState, action);
-  return newState;
+  if (!workflow.storyline) {
+    throw new Error("No storyline to generate storyboard from");
+  }
+
+  const storyboard = await createInitialStoryboard(
+    workflow.productContext,
+    workflow.storyline
+  );
+  
+  return {
+    ...workflow,
+    storyboard,
+    stage: "storyboard",
+  };
 }
