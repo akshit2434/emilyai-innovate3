@@ -49,51 +49,10 @@ export async function getProducts() {
 
   if (error) {
     console.error("Error fetching products:", error);
-    // Return mock data for UI testing
-    return getMockProducts();
+    return [];
   }
 
-  // If no real data, return mock for testing
-  if (!data || data.length === 0) {
-    return getMockProducts();
-  }
-
-  return data;
-}
-
-function getMockProducts() {
-  return [
-    {
-      id: "mock-eco-innovate",
-      user_id: "mock",
-      name: "EcoInnovate",
-      description: "Sustainable technology solutions for eco-conscious businesses. We help companies reduce their carbon footprint through smart automation.",
-      extracted_info: {
-        tagline: "Technology for a greener tomorrow",
-        target_audience: "SMBs looking to go green",
-        value_proposition: "Reduce emissions by 40% with AI-powered optimization",
-        industry: "CleanTech",
-      },
-      logo_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "mock-pulse-analytics",
-      user_id: "mock",
-      name: "Pulse Analytics",
-      description: "Real-time social media analytics and sentiment tracking for brands. Understand your audience like never before.",
-      extracted_info: {
-        tagline: "Feel the pulse of your audience",
-        target_audience: "Marketing teams at D2C brands",
-        value_proposition: "10x faster insights than traditional tools",
-        industry: "MarTech",
-      },
-      logo_url: null,
-      created_at: new Date(Date.now() - 86400000).toISOString(),
-      updated_at: new Date(Date.now() - 86400000).toISOString(),
-    },
-  ];
+  return data || [];
 }
 
 export async function getProductById(productId: string) {
@@ -103,12 +62,7 @@ export async function getProductById(productId: string) {
     return null;
   }
 
-  // Handle mock product IDs
-  if (productId.startsWith("mock-")) {
-    const mockProducts = getMockProducts();
-    return mockProducts.find(p => p.id === productId) || null;
-  }
-
+  // Real products only
   const { data, error } = await supabase
     .from("products")
     .select("*")
@@ -154,14 +108,13 @@ export async function chatWithOnboardingAgent(messages: { role: string; content:
       for await (const chunk of resultStream) {
         if (chunk.agent?.messages) {
           const lastMsg = chunk.agent.messages[chunk.agent.messages.length - 1] as AIMessage;
+          if (lastMsg.content) {
+            finalContent = typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content);
+            stream.update({ content: finalContent });
+          }
           
-          // Only stream content if there's actual text and no tool calls in this message
-          // (LangGraph node-level streaming gives the complete message)
-          if (lastMsg.content && (!lastMsg.tool_calls || lastMsg.tool_calls.length === 0)) {
-            const content = typeof lastMsg.content === 'string' ? lastMsg.content : "";
-            if (content) {
-              stream.update({ content });
-            }
+          if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+            // Tool call detected
           }
         }
         
@@ -169,11 +122,9 @@ export async function chatWithOnboardingAgent(messages: { role: string; content:
           const toolMsg = chunk.tools.messages[chunk.tools.messages.length - 1];
           if (toolMsg.content) {
             try {
-              const result = JSON.parse(toolMsg.content as string);
-              stream.update({ toolResult: result });
-            } catch (e) {
-              // Not JSON, skip
-            }
+              toolResult = JSON.parse(toolMsg.content as string);
+              stream.update({ toolResult });
+            } catch (e) {}
           }
         }
       }

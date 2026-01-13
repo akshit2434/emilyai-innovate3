@@ -63,7 +63,82 @@ const updateBrandInfoTool = tool(
 );
 
 const tools = [updateBrandInfoTool];
-const toolNode = new ToolNode(tools);
+
+// Mock Asset Generation Tools
+const generateLinkedInPostTool = tool(
+  async ({ topic, tone }) => {
+    const mockPost = `🚀 ${topic}
+
+This is a generated LinkedIn post about ${topic}.
+Tone: ${tone}
+
+[AI-generated content placeholder]
+
+#startup #innovation #growth`;
+    return JSON.stringify({ 
+      type: "linkedin",
+      content: mockPost,
+      status: "completed"
+    });
+  },
+  {
+    name: "generate_linkedin_post",
+    description: "Generate a LinkedIn post for the brand.",
+    schema: z.object({
+      topic: z.string().describe("The topic of the post"),
+      tone: z.enum(["professional", "casual", "inspiring", "educational"]).describe("Tone"),
+    }),
+  }
+);
+
+const generateTwitterThreadTool = tool(
+  async ({ topic, tweet_count }) => {
+    const mockThread = Array.from({ length: tweet_count }, (_, i) => 
+      `${i + 1}/${tweet_count}: [Tweet about ${topic}]`
+    ).join("\n\n");
+    return JSON.stringify({ 
+      type: "twitter",
+      content: mockThread,
+      status: "completed"
+    });
+  },
+  {
+    name: "generate_twitter_thread",
+    description: "Generate a Twitter/X thread.",
+    schema: z.object({
+      topic: z.string().describe("Thread topic"),
+      tweet_count: z.number().min(2).max(10).describe("Number of tweets"),
+    }),
+  }
+);
+
+const generateMarketingImageTool = tool(
+  async ({ prompt, style }) => {
+    return JSON.stringify({ 
+      type: "image",
+      content: `https://placehold.co/1200x630/f97316/white?text=${encodeURIComponent(prompt.slice(0, 20))}`,
+      prompt,
+      style,
+      status: "completed"
+    });
+  },
+  {
+    name: "generate_marketing_image",
+    description: "Generate a marketing image (returns placeholder).",
+    schema: z.object({
+      prompt: z.string().describe("Image description"),
+      style: z.enum(["minimal", "bold", "corporate", "playful"]).describe("Visual style"),
+    }),
+  }
+);
+
+const allTools = [
+  updateBrandInfoTool,
+  generateLinkedInPostTool,
+  generateTwitterThreadTool,
+  generateMarketingImageTool,
+];
+const toolNode = new ToolNode(allTools);
 
 // 3. Define the Flow
 const callModel = async (state: typeof AgentState.State) => {

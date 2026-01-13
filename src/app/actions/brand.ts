@@ -85,3 +85,102 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
 
   return stream.value;
 }
+
+// Get chat sessions for a product
+export async function getChatSessions(productId: string) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("chat_sessions")
+    .select("*")
+    .eq("product_id", productId)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching chat sessions:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Save a chat session
+export async function saveChatSession(
+  productId: string,
+  title: string,
+  messages: { role: string; content: string }[]
+) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const { data, error } = await supabase
+    .from("chat_sessions")
+    .insert([{ product_id: productId, title, messages }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error saving chat session:", error);
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+// Get assets for a product
+export async function getAssets(productId: string) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("assets")
+    .select("*")
+    .eq("product_id", productId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching assets:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Save an asset
+export async function saveAsset(
+  productId: string,
+  type: string,
+  title: string,
+  content: string,
+  status: string = "completed"
+) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const { data, error } = await supabase
+    .from("assets")
+    .insert([{ product_id: productId, type, title, content, status }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error saving asset:", error);
+    throw new Error(error.message);
+  }
+
+  revalidatePath(`/dashboard/${productId}`);
+  return data;
+}

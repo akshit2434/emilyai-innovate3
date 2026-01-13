@@ -16,7 +16,7 @@ const AgentState = Annotation.Root({
 
 // 1. Define the LLM
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.7,
 });
@@ -35,14 +35,14 @@ const saveProductInfoTool = tool(
   },
   {
     name: "save_product_info",
-    description: "Call this tool ONLY AFTER the user has explicitly confirmed the summarized brand information. Extraction fields: name, description, target audience, industry, etc.",
+    description: "Call this tool once you have extracted enough information about the project/product (name, description, target audience, industry, etc.) to store it in the database.",
     schema: z.object({
       name: z.string().describe("The name of the company or product"),
       description: z.string().describe("A concise summary of what the product does"),
       tagline: z.string().optional().describe("A catchy cinematic tagline for the brand"),
-      target_audience: z.string().optional().describe("Who the product is for"),
+      target_audience: z.string().optional().describe("Who the product is for (e.g. startup founders, ecommerce brands)"),
       value_proposition: z.string().optional().describe("What unique value it provides"),
-      industry: z.string().optional().describe("The industry sector"),
+      industry: z.string().optional().describe("The industry sector (e.g. CleanTech, MarTech, SaaS)"),
     }),
   }
 );
@@ -53,18 +53,31 @@ const toolNode = new ToolNode(tools);
 // 3. Define the Flow
 const callModel = async (state: typeof AgentState.State) => {
   const { messages } = state;
-  const systemPrompt = new SystemMessage(`
-    You are Emily, a cinematic AI brand strategist. You don't waste words. You elevate ideas through hard critique and sophisticated extraction.
-    
-    Directives:
-    - BE BRUTALLY CONCISE. No fluff. No "How can I help you?". Just momentum.
-    - BE CRITICAL. If an idea is weak, vague, or generic, critique it. Push the user to be better.
-    - EXTRACT & SUMMARIZE. Extract Name, Description, Target Audience, Industry, and Value Proposition.
-    - CONFIRMATION IS MANDATORY. Once you have enough info, present a punchy summary of the brand and ASK for confirmation.
-    - DO NOT CALL THE TOOL UNTIL CONFORMED. Only call 'save_product_info' once the user says "yes", "looks good", or equivalent.
-    
-    Tone: Sophisticated, sharp, cinematic.
-  `);
+  const systemPrompt = new SystemMessage(`You are Emily, a sharp brand strategist. No fluff.
+
+RULES:
+- Be direct and concise. Short sentences. No filler.
+- Critique weak or vague ideas. Push for clarity.
+- State assumptions explicitly.
+- NEVER call save_product_info until user confirms.
+
+FLOW:
+1. Acknowledge the idea briefly.
+2. Ask targeted questions to extract: Name, Description, Target Audience, Industry, Value Prop.
+3. When ready, present a SUMMARY in this format:
+   
+   **Brand Summary**
+   - Name: [name]
+   - Description: [description]
+   - Target Audience: [audience]
+   - Industry: [industry]
+   - Tagline: [tagline]
+   - Value Prop: [value]
+   
+   Then ask: "Ready to lock this in?"
+4. Only call save_product_info AFTER user says yes/confirms.
+
+If user says no or wants changes, update and re-present.`);
   
   const modelWithTools = llm.bindTools(tools);
   const response = await modelWithTools.invoke([systemPrompt, ...messages]);
