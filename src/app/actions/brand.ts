@@ -129,9 +129,21 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
           if (toolMsg.content) {
             try {
               const result = JSON.parse(toolMsg.content as string);
+              
+              // Extract internal fields for UI rendering (URLs, IDs)
+              // These should NOT be sent back to the AI model
+              const uiResult = { ...result };
+              if (result._internal) {
+                // Merge internal fields into the UI result for rendering
+                uiResult.image_id = result._internal.image_id;
+                uiResult.url = result._internal.url;
+                // Remove _internal from what we store/show
+                delete uiResult._internal;
+              }
+              
               // Emit tool result with tool name for status update
               stream.update({ 
-                toolResult: result,
+                toolResult: uiResult,
                 toolCall: { 
                   name: toolMsg.name || "unknown", 
                   status: result.error ? "failed" : "done" 

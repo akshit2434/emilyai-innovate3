@@ -31,11 +31,19 @@ interface GeneratedImage {
   prompt: string;
   style?: string;
   platform?: string;
+  imageIndex?: number; // 1, 2, 3... for @image1, @image2, etc.
 }
 
 interface Message {
   id: string;
   role: "assistant" | "user";
+  content: string;
+  generatedImage?: GeneratedImage;
+}
+
+// For persistence - includes generatedImage
+interface StoredMessage {
+  role: string;
   content: string;
   generatedImage?: GeneratedImage;
 }
@@ -70,6 +78,7 @@ export default function ProductChatPage() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<Array<{ name: string; status: ToolStatus }>>([]);
+  const [imageCounter, setImageCounter] = useState(0); // For @image1, @image2, etc.
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -88,12 +97,21 @@ export default function ProductChatPage() {
         if (sessionIdFromUrl) {
           const session = await getChatSessionById(sessionIdFromUrl);
           if (session && session.messages) {
-            const loadedMessages: Message[] = session.messages.map((m: { role: string; content: string }, i: number) => ({
-              id: `loaded-${i}`,
-              role: m.role as "user" | "assistant",
-              content: m.content,
-            }));
+            let maxImageIndex = 0;
+            const loadedMessages: Message[] = session.messages.map((m: StoredMessage, i: number) => {
+              // Track the highest image index for counter
+              if (m.generatedImage?.imageIndex) {
+                maxImageIndex = Math.max(maxImageIndex, m.generatedImage.imageIndex);
+              }
+              return {
+                id: `loaded-${i}`,
+                role: m.role as "user" | "assistant",
+                content: m.content,
+                generatedImage: m.generatedImage,
+              };
+            });
             setMessages(loadedMessages);
+            setImageCounter(maxImageIndex);
             setSelectedChatId(sessionIdFromUrl);
             setCurrentSessionId(sessionIdFromUrl);
           }
@@ -133,12 +151,21 @@ export default function ProductChatPage() {
   async function loadChatSession(sessionId: string) {
     const session = await getChatSessionById(sessionId);
     if (session && session.messages) {
-      const loadedMessages: Message[] = session.messages.map((m: { role: string; content: string }, i: number) => ({
-        id: `loaded-${i}`,
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+      let maxImageIndex = 0;
+      const loadedMessages: Message[] = session.messages.map((m: StoredMessage, i: number) => {
+        // Track the highest image index for counter
+        if (m.generatedImage?.imageIndex) {
+          maxImageIndex = Math.max(maxImageIndex, m.generatedImage.imageIndex);
+        }
+        return {
+          id: `loaded-${i}`,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          generatedImage: m.generatedImage,
+        };
+      });
       setMessages(loadedMessages);
+      setImageCounter(maxImageIndex);
       setSelectedChatId(sessionId);
       setCurrentSessionId(sessionId);
     }
@@ -166,9 +193,14 @@ export default function ProductChatPage() {
     setActiveTools([]); // Reset tool states for new message
 
     try {
+      // Filter out empty messages before sending to AI
+      const messagesToSend = newMessages
+        .filter((m) => m.content && m.content.trim().length > 0)
+        .map((m) => ({ role: m.role, content: m.content }));
+      
       const streamValue = await chatWithBrandAgent(
         productId,
-        newMessages.map((m) => ({ role: m.role, content: m.content })),
+        messagesToSend,
         product
       );
       
@@ -208,6 +240,10 @@ export default function ProductChatPage() {
         if (chunk?.toolResult) {
           // Handle generated image tool result
           if (chunk.toolResult.type === "generated_image") {
+            // Assign the next image index
+            const newImageIndex = imageCounter + 1;
+            setImageCounter(newImageIndex);
+            
             setMessages((prev) => {
               const next = [...prev];
               const last = next.find((m) => m.id === assistantMessageId);
@@ -218,6 +254,7 @@ export default function ProductChatPage() {
                   prompt: chunk.toolResult.prompt,
                   style: chunk.toolResult.style,
                   platform: chunk.toolResult.platform,
+                  imageIndex: newImageIndex,
                 };
               }
               return next;
@@ -243,18 +280,25 @@ export default function ProductChatPage() {
       if (userMessages.length > 0) {
         const title = userMessages[0].content.slice(0, 50) + (userMessages[0].content.length > 50 ? "..." : "");
         try {
+          // Include generatedImage in saved messages
+          const messagesToSave = finalMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+            generatedImage: m.generatedImage,
+          }));
+          
           if (currentSessionId) {
             // Update existing session
             await updateChatSession(
               currentSessionId,
-              finalMessages.map(m => ({ role: m.role, content: m.content }))
+              messagesToSave
             );
           } else {
             // Create new session
             const savedSession = await saveChatSession(
               productId,
               title,
-              finalMessages.map(m => ({ role: m.role, content: m.content }))
+              messagesToSave
             );
             setCurrentSessionId(savedSession.id);
             setChatHistory(prev => [{ id: savedSession.id, title, created_at: new Date().toISOString() }, ...prev]);
@@ -424,9 +468,10 @@ export default function ProductChatPage() {
                           <ImageViewer
                             imageUrl={msg.generatedImage.url}
                             imageId={msg.generatedImage.image_id}
+                            imageIndex={msg.generatedImage.imageIndex || 1}
                             prompt={msg.generatedImage.prompt}
-                            onRequestEdit={(imageId) => {
-                              setInput(`Edit image ${imageId}: `);
+                            onRequestEdit={(imageRef) => {
+                              setInput((prev) => prev + `${imageRef} `);
                               inputRef.current?.focus();
                             }}
                           />

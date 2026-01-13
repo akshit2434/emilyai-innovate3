@@ -7,11 +7,12 @@ import { Pencil, X, Maximize2 } from "lucide-react";
 interface ImageViewerProps {
   imageUrl: string;
   imageId: string;
+  imageIndex: number; // 1, 2, 3... for @image1, @image2, etc.
   prompt: string;
-  onRequestEdit?: (imageId: string) => void;
+  onRequestEdit?: (imageReference: string) => void; // Returns @image1, @image2, etc.
 }
 
-export function ImageViewer({ imageUrl, imageId, prompt, onRequestEdit }: ImageViewerProps) {
+export function ImageViewer({ imageUrl, imageId, imageIndex, prompt, onRequestEdit }: ImageViewerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -37,7 +38,7 @@ export function ImageViewer({ imageUrl, imageId, prompt, onRequestEdit }: ImageV
             </button>
             {onRequestEdit && (
               <button
-                onClick={() => onRequestEdit(imageId)}
+                onClick={() => onRequestEdit(`@image${imageIndex}`)}
                 className="p-1.5 rounded-lg bg-white/20 backdrop-blur-sm hover:bg-white/30 transition-colors"
                 title="Edit image"
               >
@@ -78,7 +79,7 @@ export function ImageViewer({ imageUrl, imageId, prompt, onRequestEdit }: ImageV
                 </p>
                 {onRequestEdit && (
                   <button
-                    onClick={() => { onRequestEdit(imageId); setIsExpanded(false); }}
+                    onClick={() => { onRequestEdit(`@image${imageIndex}`); setIsExpanded(false); }}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-sm font-medium hover:bg-gray-100 transition-colors"
                   >
                     <Pencil size={14} /> Edit

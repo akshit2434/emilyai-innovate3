@@ -176,23 +176,29 @@ const generateTwitterThreadTool = tool(
 const generateMarketingImageTool = tool(
   async ({ prompt, style, platform }) => {
     // Mock: return static stock image
+    // Note: image_id and url are for internal use only - not exposed to AI
     const imageId = `img_${Date.now()}`;
     const stockImageUrl = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80";
     
     return JSON.stringify({
       type: "generated_image",
-      image_id: imageId,
-      url: stockImageUrl,
+      // Internal fields (for UI rendering, not for AI context)
+      _internal: {
+        image_id: imageId,
+        url: stockImageUrl,
+      },
+      // Fields visible to AI (no URLs or raw IDs)
       prompt,
       style,
       platform: platform || "instagram_post",
       status: "completed",
       editable: true,
+      message: "Image generated successfully. The user can see it in the chat and edit it if needed.",
     });
   },
   {
     name: "generate_marketing_image",
-    description: "Generate a marketing image for the brand. Returns an image that can be viewed and edited.",
+    description: "Generate a marketing image for the brand. Returns an image that can be viewed and edited by the user. Do NOT mention any image IDs or URLs to the user - they will see the image automatically in the chat interface.",
     schema: z.object({
       prompt: z.string().describe("Detailed description of the image to generate"),
       style: z.enum(["minimal", "bold", "cinematic", "corporate"]).describe("Visual style"),
@@ -202,28 +208,34 @@ const generateMarketingImageTool = tool(
 );
 
 const editImageTool = tool(
-  async ({ image_id, edit_prompt }) => {
+  async ({ image_reference, edit_prompt }) => {
     // Mock: return stock image with updated metadata
+    // Note: image_id and url are for internal use only - not exposed to AI
     const stockImageUrl = "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&q=80";
     const newImageId = `img_${Date.now()}`;
     
     return JSON.stringify({
       type: "generated_image",
-      image_id: newImageId,
-      original_image_id: image_id,
-      url: stockImageUrl,
+      // Internal fields (for UI rendering, not for AI context)
+      _internal: {
+        image_id: newImageId,
+        url: stockImageUrl,
+        original_reference: image_reference,
+      },
+      // Fields visible to AI (no URLs or raw IDs)
       prompt: edit_prompt,
       status: "completed",
       editable: true,
       is_edit: true,
+      message: "Image edited successfully. The user can see the updated image in the chat.",
     });
   },
   {
     name: "edit_image",
-    description: "Edit a previously generated image based on a new prompt. Use when user wants to modify an existing image.",
+    description: "REQUIRED: You MUST call this tool when the user mentions @image1, @image2, or any @imageN reference and wants to edit, modify, change, or update an image. This tool ACTUALLY performs the edit - do not pretend to edit without calling this tool.",
     schema: z.object({
-      image_id: z.string().describe("The ID of the image to edit"),
-      edit_prompt: z.string().describe("Description of the changes to make to the image"),
+      image_reference: z.string().describe("The image reference from the user's message (e.g., @image1, @image2). Copy this exactly as the user wrote it."),
+      edit_prompt: z.string().describe("Detailed description of all the changes the user wants to make to the image"),
     }),
   }
 );
@@ -269,6 +281,13 @@ You seamlessly blend research, strategy, and content creation. Use any combinati
 - Modern, premium, cinematic aesthetic
 - Bold typography with clean layouts
 - After generating an image, the user can view it and request edits
+
+**CRITICAL - IMAGE HANDLING:**
+- NEVER mention image IDs, URLs, or internal references to the user
+- When you generate images, the user sees them automatically in the chat
+- Users reference images as @image1, @image2, etc. when requesting edits
+- **IMPORTANT**: When a user mentions @image1, @image2, etc. and asks to edit/modify/change it, you MUST call the edit_image tool. Do NOT just say you edited it - actually call the tool!
+- Simply acknowledge that you've created/edited the image—don't share technical details
 
 **BUSINESS DIAGNOSIS APPROACH:**
 When user asks about business issues (conversions, growth, positioning, etc.):
