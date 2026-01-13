@@ -164,6 +164,7 @@ export default function DashboardPage() {
                             <motion.div
                               key={product.id}
                               whileHover={{ y: -4 }}
+                              onClick={() => router.push(`/dashboard/${product.id}`)}
                               className="group relative p-6 rounded-2xl bg-white border border-black/[0.04] hover:shadow-xl hover:shadow-black/[0.03] transition-all duration-500 cursor-pointer"
                             >
                               <div className="absolute top-5 right-5 text-[#1a1a1a]/10 group-hover:text-orange-400 transition-colors duration-300">

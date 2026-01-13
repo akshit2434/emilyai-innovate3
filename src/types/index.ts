@@ -3,6 +3,13 @@ export type Product = {
   user_id: string;
   name: string;
   description: string;
+  extracted_info?: {
+    tagline?: string;
+    target_audience?: string;
+    value_proposition?: string;
+    industry?: string;
+  };
+  logo_url?: string;
   created_at: string;
   updated_at: string;
 };
