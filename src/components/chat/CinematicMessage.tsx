@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 interface CinematicMessageProps {
   content: string;
   isAssistant?: boolean;
+  isLoaded?: boolean;
 }
 
 // Tracks how many words have already been animated globally per message
@@ -114,7 +115,7 @@ const AnimatedChildren = ({ children, startAnimatingFrom, getNextWordIndex }: An
   );
 };
 
-export const CinematicMessage = React.memo(({ content, isAssistant = true }: CinematicMessageProps) => {
+export const CinematicMessage = React.memo(({ content, isAssistant = true, isLoaded = false }: CinematicMessageProps) => {
   // Count total words in content for the tracker
   const totalWords = useMemo(() => {
     return content.split(/\s+/).filter(word => word.trim() !== "").length;
@@ -131,11 +132,63 @@ export const CinematicMessage = React.memo(({ content, isAssistant = true }: Cin
   
   if (!isAssistant) {
     return (
-      <div className="inline-block max-w-md">
+      <motion.div 
+        className="inline-block max-w-md"
+        initial={isLoaded ? { opacity: 0, filter: "blur(8px)" } : false}
+        animate={isLoaded ? { opacity: 1, filter: "blur(0px)" } : undefined}
+        transition={{ duration: 0.4, ease: [0.2, 0, 0.2, 1] }}
+      >
         <p className="text-base font-medium text-[#1a1a1a]/70 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-2xl border border-black/[0.04] shadow-sm whitespace-pre-wrap">
           {content}
         </p>
-      </div>
+      </motion.div>
+    );
+  }
+
+  // For loaded assistant messages, render without word-by-word animation
+  if (isLoaded) {
+    return (
+      <motion.div 
+        className="flex-1 prose prose-sm prose-neutral max-w-none"
+        initial={{ opacity: 0, filter: "blur(8px)" }}
+        animate={{ opacity: 1, filter: "blur(0px)" }}
+        transition={{ duration: 0.4, ease: [0.2, 0, 0.2, 1] }}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            p: ({ children }) => (
+              <p className="text-xl md:text-2xl font-[var(--font-cormorant)] font-medium leading-relaxed text-[#1a1a1a]/80 mb-4 last:mb-0">
+                {children}
+              </p>
+            ),
+            strong: ({ children }) => (
+              <strong className="font-bold text-[#1a1a1a]">
+                {children}
+              </strong>
+            ),
+            em: ({ children }) => (
+              <em className="italic">
+                {children}
+              </em>
+            ),
+            ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-2">{children}</ul>,
+            ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-2">{children}</ol>,
+            li: ({ children }) => (
+              <li className="text-lg md:text-xl font-[var(--font-cormorant)] text-[#1a1a1a]/70">
+                {children}
+              </li>
+            ),
+            code: ({ children }) => (
+              <code className="bg-[#1a1a1a]/5 px-1.5 py-0.5 rounded font-[var(--font-jetbrains)] text-sm">
+                {children}
+              </code>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </motion.div>
     );
   }
 

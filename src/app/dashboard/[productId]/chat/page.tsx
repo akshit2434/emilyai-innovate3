@@ -357,10 +357,10 @@ export default function ProductChatPage() {
                       <div className="assistant-avatar mt-1">
                         <span className="assistant-avatar-initial">E</span>
                       </div>
-                      <CinematicMessage content={msg.content} isAssistant={true} />
+                      <CinematicMessage content={msg.content} isAssistant={true} isLoaded={msg.id.startsWith("loaded-")} />
                     </div>
                   ) : (
-                    <CinematicMessage content={msg.content} isAssistant={false} />
+                    <CinematicMessage content={msg.content} isAssistant={false} isLoaded={msg.id.startsWith("loaded-")} />
                   )}
                 </motion.div>
               ))}
