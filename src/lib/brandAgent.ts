@@ -140,11 +140,39 @@ const generateMarketingImageTool = tool(
   }
 );
 
+const editImageTool = tool(
+  async ({ image_id, edit_prompt }) => {
+    // Mock: return stock image with updated metadata
+    const stockImageUrl = "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&q=80";
+    const newImageId = `img_${Date.now()}`;
+    
+    return JSON.stringify({
+      type: "generated_image",
+      image_id: newImageId,
+      original_image_id: image_id,
+      url: stockImageUrl,
+      prompt: edit_prompt,
+      status: "completed",
+      editable: true,
+      is_edit: true,
+    });
+  },
+  {
+    name: "edit_image",
+    description: "Edit a previously generated image based on a new prompt. Use when user wants to modify an existing image.",
+    schema: z.object({
+      image_id: z.string().describe("The ID of the image to edit"),
+      edit_prompt: z.string().describe("Description of the changes to make to the image"),
+    }),
+  }
+);
+
 const allTools = [
   updateBrandInfoTool,
   generateLinkedInPostTool,
   generateTwitterThreadTool,
   generateMarketingImageTool,
+  editImageTool,
 ];
 const toolNode = new ToolNode(allTools);
 
