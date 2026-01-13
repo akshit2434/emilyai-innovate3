@@ -113,21 +113,29 @@ const generateTwitterThreadTool = tool(
 );
 
 const generateMarketingImageTool = tool(
-  async ({ prompt, style }) => {
-    return JSON.stringify({ 
-      type: "image",
-      content: `https://placehold.co/1200x630/f97316/white?text=${encodeURIComponent(prompt.slice(0, 20))}`,
+  async ({ prompt, style, platform }) => {
+    // Mock: return static stock image
+    const imageId = `img_${Date.now()}`;
+    const stockImageUrl = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80";
+    
+    return JSON.stringify({
+      type: "generated_image",
+      image_id: imageId,
+      url: stockImageUrl,
       prompt,
       style,
-      status: "completed"
+      platform: platform || "instagram_post",
+      status: "completed",
+      editable: true,
     });
   },
   {
     name: "generate_marketing_image",
-    description: "Generate a marketing image (returns placeholder).",
+    description: "Generate a marketing image for the brand. Returns an image that can be viewed and edited.",
     schema: z.object({
-      prompt: z.string().describe("Image description"),
-      style: z.enum(["minimal", "bold", "corporate", "playful"]).describe("Visual style"),
+      prompt: z.string().describe("Detailed description of the image to generate"),
+      style: z.enum(["minimal", "bold", "cinematic", "corporate"]).describe("Visual style"),
+      platform: z.enum(["instagram_post", "instagram_story", "facebook_ad", "linkedin"]).optional().describe("Target platform"),
     }),
   }
 );

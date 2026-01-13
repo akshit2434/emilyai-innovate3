@@ -20,11 +20,21 @@ import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
 import { cn } from "@/lib/utils";
 import { CinematicMessage } from "@/components/chat/CinematicMessage";
+import { ImageViewer } from "@/components/chat/ImageViewer";
+
+interface GeneratedImage {
+  image_id: string;
+  url: string;
+  prompt: string;
+  style?: string;
+  platform?: string;
+}
 
 interface Message {
   id: string;
   role: "assistant" | "user";
   content: string;
+  generatedImage?: GeneratedImage;
 }
 
 interface ChatSession {
@@ -172,10 +182,29 @@ export default function ProductChatPage() {
           });
         }
 
-        if (chunk?.toolResult?.success) {
+        if (chunk?.toolResult) {
+          // Handle generated image tool result
+          if (chunk.toolResult.type === "generated_image") {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next.find((m) => m.id === assistantMessageId);
+              if (last) {
+                last.generatedImage = {
+                  image_id: chunk.toolResult.image_id,
+                  url: chunk.toolResult.url,
+                  prompt: chunk.toolResult.prompt,
+                  style: chunk.toolResult.style,
+                  platform: chunk.toolResult.platform,
+                };
+              }
+              return next;
+            });
+          }
           // Refresh product data if brand was updated
-          const updatedProduct = await getProductById(productId);
-          setProduct(updatedProduct);
+          if (chunk.toolResult.success) {
+            const updatedProduct = await getProductById(productId);
+            setProduct(updatedProduct);
+          }
         }
       }
       // Save chat session after successful conversation
@@ -357,7 +386,20 @@ export default function ProductChatPage() {
                       <div className="assistant-avatar mt-1">
                         <span className="assistant-avatar-initial">E</span>
                       </div>
-                      <CinematicMessage content={msg.content} isAssistant={true} isLoaded={msg.id.startsWith("loaded-")} />
+                      <div className="flex flex-col gap-4">
+                        <CinematicMessage content={msg.content} isAssistant={true} isLoaded={msg.id.startsWith("loaded-")} />
+                        {msg.generatedImage && (
+                          <ImageViewer
+                            imageUrl={msg.generatedImage.url}
+                            imageId={msg.generatedImage.image_id}
+                            prompt={msg.generatedImage.prompt}
+                            onRequestEdit={(imageId) => {
+                              setInput(`Edit image ${imageId}: `);
+                              inputRef.current?.focus();
+                            }}
+                          />
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <CinematicMessage content={msg.content} isAssistant={false} isLoaded={msg.id.startsWith("loaded-")} />
