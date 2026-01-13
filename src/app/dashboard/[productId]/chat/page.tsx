@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getProductById } from "@/app/actions/products";
-import { chatWithBrandAgent, getChatSessions, saveChatSession, getChatSessionById } from "@/app/actions/brand";
+import { chatWithBrandAgent, getChatSessions, saveChatSession, getChatSessionById, updateChatSession } from "@/app/actions/brand";
 import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
 import { cn } from "@/lib/utils";
@@ -240,16 +240,25 @@ export default function ProductChatPage() {
       
       // Only save if there's actual user content (not just the initial greeting)
       const userMessages = finalMessages.filter(m => m.role === "user");
-      if (userMessages.length > 0 && !currentSessionId) {
+      if (userMessages.length > 0) {
         const title = userMessages[0].content.slice(0, 50) + (userMessages[0].content.length > 50 ? "..." : "");
         try {
-          const savedSession = await saveChatSession(
-            productId,
-            title,
-            finalMessages.map(m => ({ role: m.role, content: m.content }))
-          );
-          setCurrentSessionId(savedSession.id);
-          setChatHistory(prev => [{ id: savedSession.id, title, created_at: new Date().toISOString() }, ...prev]);
+          if (currentSessionId) {
+            // Update existing session
+            await updateChatSession(
+              currentSessionId,
+              finalMessages.map(m => ({ role: m.role, content: m.content }))
+            );
+          } else {
+            // Create new session
+            const savedSession = await saveChatSession(
+              productId,
+              title,
+              finalMessages.map(m => ({ role: m.role, content: m.content }))
+            );
+            setCurrentSessionId(savedSession.id);
+            setChatHistory(prev => [{ id: savedSession.id, title, created_at: new Date().toISOString() }, ...prev]);
+          }
         } catch (err) {
           console.error("Failed to save chat session:", err);
         }

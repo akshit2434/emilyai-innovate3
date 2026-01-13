@@ -16,13 +16,19 @@ const AgentState = Annotation.Root({
     reducer: (x, y) => y ?? x,
     default: () => null,
   }),
+  iterationCount: Annotation<number>({
+    reducer: (x, y) => (y !== undefined ? y : x) + 1,
+    default: () => 0,
+  }),
 });
 
 // 1. Define the LLM
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-flash",
+  model: "gemini-2.0-flash",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.7,
+  streaming: true,
+  maxOutputTokens: 2048,
 });
 
 // 2. Define the Tool
@@ -280,10 +286,18 @@ When user asks about business issues (conversions, growth, positioning, etc.):
 };
 
 const shouldContinue = (state: typeof AgentState.State) => {
-  const { messages } = state;
+  const { messages, iterationCount } = state;
   const lastMessage = messages[messages.length - 1] as AIMessage;
   
+  // Prevent infinite loops - max 5 tool call rounds
+  const MAX_ITERATIONS = 5;
+  if (iterationCount >= MAX_ITERATIONS) {
+    console.warn(`[brandAgent] Max iterations (${MAX_ITERATIONS}) reached, stopping`);
+    return END;
+  }
+  
   if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+    console.log(`[brandAgent] Iteration ${iterationCount}: Calling ${lastMessage.tool_calls.length} tools`);
     return "tools";
   }
   return END;
