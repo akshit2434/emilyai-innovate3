@@ -21,6 +21,9 @@ import { Product } from "@/types";
 import { cn } from "@/lib/utils";
 import { CinematicMessage } from "@/components/chat/CinematicMessage";
 import { ImageViewer } from "@/components/chat/ImageViewer";
+import { ToolStatusPill } from "@/components/chat/ToolStatusPill";
+
+type ToolStatus = "processing" | "done" | "failed";
 
 interface GeneratedImage {
   image_id: string;
@@ -66,6 +69,7 @@ export default function ProductChatPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [activeTools, setActiveTools] = useState<Array<{ name: string; status: ToolStatus }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -159,6 +163,7 @@ export default function ProductChatPage() {
     const newMessages = [...messages, { id: userMessageId, role: "user" as const, content: userMessage }];
     setMessages(newMessages);
     setIsThinking(true);
+    setActiveTools([]); // Reset tool states for new message
 
     try {
       const streamValue = await chatWithBrandAgent(
@@ -179,6 +184,24 @@ export default function ProductChatPage() {
               last.content = chunk.content;
             }
             return next;
+          });
+        }
+
+        // Handle tool call status updates
+        if (chunk?.toolCall) {
+          setActiveTools((prev) => {
+            const existing = prev.find((t) => t.name === chunk.toolCall.name);
+            if (existing) {
+              // Update existing tool status
+              return prev.map((t) =>
+                t.name === chunk.toolCall.name
+                  ? { ...t, status: chunk.toolCall.status }
+                  : t
+              );
+            } else {
+              // Add new tool
+              return [...prev, { name: chunk.toolCall.name, status: chunk.toolCall.status }];
+            }
           });
         }
 
@@ -412,12 +435,21 @@ export default function ProductChatPage() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-4"
+                className="flex flex-col gap-3"
               >
-                <div className="assistant-avatar">
-                  <Loader2 size={14} className="text-white animate-spin" />
+                <div className="flex items-center gap-4">
+                  <div className="assistant-avatar">
+                    <Loader2 size={14} className="text-white animate-spin" />
+                  </div>
+                  <span className="text-[#1a1a1a]/30 text-xs font-[var(--font-jetbrains)]">thinking...</span>
                 </div>
-                <span className="text-[#1a1a1a]/30 text-xs font-[var(--font-jetbrains)]">thinking...</span>
+                {activeTools.length > 0 && (
+                  <div className="pl-12 flex flex-wrap gap-2">
+                    {activeTools.map((tool) => (
+                      <ToolStatusPill key={tool.name} toolName={tool.name} status={tool.status} />
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
             <div ref={messagesEndRef} />

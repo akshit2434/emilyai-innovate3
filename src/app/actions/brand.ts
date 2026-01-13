@@ -57,6 +57,18 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
         if (chunk.agent?.messages) {
           const lastMsg = chunk.agent.messages[chunk.agent.messages.length - 1] as AIMessage;
           
+          // Emit tool call when AI invokes tools
+          if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+            for (const toolCall of lastMsg.tool_calls) {
+              stream.update({ 
+                toolCall: { 
+                  name: toolCall.name, 
+                  status: "processing" 
+                } 
+              });
+            }
+          }
+          
           if (lastMsg.content && (!lastMsg.tool_calls || lastMsg.tool_calls.length === 0)) {
             const content = typeof lastMsg.content === 'string' ? lastMsg.content : "";
             if (content) {
@@ -70,7 +82,14 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
           if (toolMsg.content) {
             try {
               const result = JSON.parse(toolMsg.content as string);
-              stream.update({ toolResult: result });
+              // Emit tool result with tool name for status update
+              stream.update({ 
+                toolResult: result,
+                toolCall: { 
+                  name: toolMsg.name || "unknown", 
+                  status: result.error ? "failed" : "done" 
+                }
+              });
             } catch (e) {}
           }
         }
