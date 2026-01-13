@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getProductById } from "@/app/actions/products";
-import { chatWithBrandAgent, getChatSessions } from "@/app/actions/brand";
+import { chatWithBrandAgent, getChatSessions, saveChatSession } from "@/app/actions/brand";
 import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,7 @@ export default function ProductChatPage() {
   const [isThinking, setIsThinking] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -146,6 +147,30 @@ export default function ProductChatPage() {
           setProduct(updatedProduct);
         }
       }
+      // Save chat session after successful conversation
+      const finalMessages = await new Promise<Message[]>((resolve) => {
+        setMessages((prev) => {
+          resolve(prev);
+          return prev;
+        });
+      });
+      
+      // Only save if there's actual user content (not just the initial greeting)
+      const userMessages = finalMessages.filter(m => m.role === "user");
+      if (userMessages.length > 0 && !currentSessionId) {
+        const title = userMessages[0].content.slice(0, 50) + (userMessages[0].content.length > 50 ? "..." : "");
+        try {
+          const savedSession = await saveChatSession(
+            productId,
+            title,
+            finalMessages.map(m => ({ role: m.role, content: m.content }))
+          );
+          setCurrentSessionId(savedSession.id);
+          setChatHistory(prev => [{ id: savedSession.id, title, created_at: new Date().toISOString() }, ...prev]);
+        } catch (err) {
+          console.error("Failed to save chat session:", err);
+        }
+      }
     } catch (error) {
       console.error(error);
       setMessages((prev) => [
@@ -176,6 +201,7 @@ export default function ProductChatPage() {
             onClick={() => {
               setMessages([{ id: "initial", role: "assistant", content: "What would you like to research or update today?" }]);
               setSelectedChatId(null);
+              setCurrentSessionId(null);
             }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-[#1a1a1a] text-white text-xs font-medium hover:bg-[#2a2a2a] transition-colors"
           >
@@ -340,13 +366,13 @@ export default function ProductChatPage() {
               }}
               placeholder="Ask about competitors, market trends, or update your brand..."
               disabled={isThinking}
-              rows={1}
-              className="flex-1 px-4 py-3 bg-transparent focus:outline-none text-sm font-medium placeholder:text-[#1a1a1a]/30 resize-none min-h-[44px] max-h-[120px] overflow-y-auto"
-              style={{ height: 'auto' }}
+              rows={2}
+              className="flex-1 px-4 py-3 bg-transparent focus:outline-none text-sm font-medium placeholder:text-[#1a1a1a]/30 resize-none min-h-[60px] max-h-[160px] overflow-y-auto"
+              style={{ height: '60px' }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement;
-                target.style.height = 'auto';
-                target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                target.style.height = '60px';
+                target.style.height = Math.max(60, Math.min(target.scrollHeight, 160)) + 'px';
               }}
             />
             <motion.button

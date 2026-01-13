@@ -228,17 +228,75 @@ export default function ProductDashboardPage() {
           </motion.div>
         )}
 
-        {/* Assets Grid */}
+        {/* Research Chats Grid */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
+          className="mb-10"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-[var(--font-playfair)] font-medium">Research Chats</h3>
+            <span className="text-[10px] font-[var(--font-jetbrains)] text-[#1a1a1a]/30">{chatSessions.length} chats</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Start New Chat */}
+            <Link 
+              href={`/dashboard/${productId}/chat`}
+              className="p-4 rounded-xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all flex flex-col items-center justify-center min-h-[100px] group"
+            >
+              <Plus size={20} className="text-[#1a1a1a]/20 group-hover:text-orange-500 transition-colors mb-2" />
+              <span className="text-xs text-[#1a1a1a]/30 group-hover:text-[#1a1a1a]/60 transition-colors">Start New Chat</span>
+            </Link>
+            {chatSessions.slice(0, 3).map((chat, i) => {
+              const formatDate = (dateString: string) => {
+                const date = new Date(dateString);
+                const now = new Date();
+                const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays === 0) return "Today";
+                if (diffDays === 1) return "Yesterday";
+                return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              };
+              return (
+                <Link
+                  key={chat.id}
+                  href={`/dashboard/${productId}/chat?session=${chat.id}`}
+                  className="p-4 rounded-xl bg-white border border-black/[0.04] hover:shadow-lg hover:shadow-black/[0.02] transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-50 to-pink-50 border border-orange-100/50 flex items-center justify-center">
+                      <MessageSquare size={14} className="text-orange-500" />
+                    </div>
+                    <span className="text-[9px] font-[var(--font-jetbrains)] uppercase text-[#1a1a1a]/30">
+                      {formatDate(chat.created_at || chat.updated_at)}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium text-[#1a1a1a]/70 group-hover:text-[#1a1a1a] transition-colors truncate">{chat.title}</p>
+                </Link>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        {/* Assets Grid */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-[var(--font-playfair)] font-medium">Generated Assets</h3>
             <span className="text-[10px] font-[var(--font-jetbrains)] text-[#1a1a1a]/30">{assets.length} assets</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Create New Asset - First */}
+            <button 
+              onClick={() => setIsAssetModalOpen(true)}
+              className="p-4 rounded-xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all flex flex-col items-center justify-center min-h-[100px] group"
+            >
+              <Plus size={20} className="text-[#1a1a1a]/20 group-hover:text-orange-500 transition-colors mb-2" />
+              <span className="text-xs text-[#1a1a1a]/30 group-hover:text-[#1a1a1a]/60 transition-colors">Create Asset</span>
+            </button>
             {assets.map((asset, i) => {
               const Icon = assetIcons[asset.type] || FileText;
               return (
@@ -261,14 +319,6 @@ export default function ProductDashboardPage() {
                 </div>
               );
             })}
-            {/* Add New Asset */}
-            <button 
-              onClick={() => setIsAssetModalOpen(true)}
-              className="p-4 rounded-xl border-2 border-dashed border-black/[0.06] hover:border-orange-300 hover:bg-orange-50/30 transition-all flex flex-col items-center justify-center min-h-[100px] group"
-            >
-              <Plus size={20} className="text-[#1a1a1a]/20 group-hover:text-orange-500 transition-colors mb-2" />
-              <span className="text-xs text-[#1a1a1a]/30 group-hover:text-[#1a1a1a]/60 transition-colors">Create Asset</span>
-            </button>
           </div>
         </motion.div>
       </main>

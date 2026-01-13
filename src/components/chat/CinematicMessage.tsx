@@ -132,7 +132,7 @@ export const CinematicMessage = React.memo(({ content, isAssistant = true }: Cin
   if (!isAssistant) {
     return (
       <div className="inline-block max-w-md">
-        <p className="text-base font-medium text-[#1a1a1a]/70 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-2xl border border-black/[0.04] shadow-sm">
+        <p className="text-base font-medium text-[#1a1a1a]/70 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-2xl border border-black/[0.04] shadow-sm whitespace-pre-wrap">
           {content}
         </p>
       </div>
