@@ -55,9 +55,7 @@ export default function DashboardPage() {
       {/* Sidebar */}
       <aside className="w-64 border-r border-black/[0.04] bg-white/60 backdrop-blur-xl flex flex-col relative z-10">
         <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-bold text-white text-sm shadow-lg shadow-orange-500/20">
-            E
-          </div>
+          <img src="/logo.png" alt="EmilyAI" className="w-8 h-8 object-contain" />
           <span className="font-semibold text-lg tracking-tight">EmilyAI</span>
         </div>
 

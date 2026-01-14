@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  /* Dashboard colors */
   --background: #faf9f7;
   --foreground: #1a1a1a;
   --muted: #8a8a8a;
@@ -10,6 +11,21 @@
   --card: #ffffff;
   --border: rgba(0, 0, 0, 0.06);
   --border-strong: rgba(0, 0, 0, 0.1);
+
+  /* Landing page color palette */
+  --cream-paper: #faf9f7;
+  --charcoal-plum: #2d2a3e;
+  --mauve-gray: #7a7589;
+  --soft-peach: #fce8dc;
+  --pale-blush: #fde2e4;
+  --dream-lavender: #e8e0f0;
+  --rose-tint: #fdf2f4;
+  --peach-mist: #fef3ea;
+  --solar-orange: #f97316;
+  --warm-amber: #f59e0b;
+  --luminous-pink: #ec4899;
+  --electric-rose: #f43f5e;
+  --deep-violet: #7c3aed;
 }
 
 @theme inline {
@@ -327,4 +343,136 @@ html {
   font-weight: 700;
   color: white;
   font-family: var(--font-playfair);
+}
+
+/* ============================================
+   LANDING PAGE STYLES
+   ============================================ */
+
+/* Gradient Buttons */
+.btn-gradient {
+  background: linear-gradient(135deg, var(--solar-orange) 0%, var(--luminous-pink) 100%);
+  color: white;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--luminous-pink) 0%, var(--solar-orange) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.btn-gradient:hover::before {
+  opacity: 1;
+}
+
+.btn-gradient:hover {
+  box-shadow: 0 10px 40px rgba(249, 115, 22, 0.35);
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background: white;
+  color: var(--charcoal-plum);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--cream-paper);
+  border-color: var(--solar-orange);
+  box-shadow: 0 4px 20px rgba(249, 115, 22, 0.1);
+}
+
+/* Grain Overlay */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* Gradient Text */
+.gradient-text-hero {
+  background: linear-gradient(135deg, var(--solar-orange) 0%, var(--luminous-pink) 50%, var(--deep-violet) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+}
+
+.glass-card-strong {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* Postcard Style */
+.postcard {
+  background: white;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+  transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.postcard:hover {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+}
+
+/* Landing Page Blur Orbs */
+.blur-orb-peach {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(254, 243, 234, 0.8) 0%, transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.blur-orb-blush {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(253, 226, 228, 0.7) 0%, transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.blur-orb-lavender {
+  position: absolute;
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, rgba(232, 224, 240, 0.7) 0%, transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+/* Mesh Gradient Background */
+.mesh-gradient {
+  background:
+    radial-gradient(at 20% 30%, var(--soft-peach) 0%, transparent 50%),
+    radial-gradient(at 80% 20%, var(--dream-lavender) 0%, transparent 50%),
+    radial-gradient(at 40% 80%, var(--pale-blush) 0%, transparent 50%),
+    var(--cream-paper);
 }

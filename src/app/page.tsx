@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion, useScroll, useTransform } from "framer-motion";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -41,7 +42,7 @@ const fadeUp = {
     transition: {
       delay: i * 0.12,
       duration: 0.9,
-      ease: [0.22, 1, 0.36, 1],
+      ease: [0.22, 1, 0.36, 1] as const,
     },
   }),
 };
@@ -51,7 +52,7 @@ const scaleUp = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] as const },
   },
 };
 
@@ -204,9 +205,13 @@ export default function LandingPage() {
                 }}
                 transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
               />
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[var(--solar-orange)] to-[var(--luminous-pink)] flex items-center justify-center font-bold text-white text-sm sm:text-base shadow-lg shadow-[var(--solar-orange)]/30">
-                E
-              </div>
+              <Image
+                src="/logo.png"
+                alt="EmilyAI Logo"
+                width={40}
+                height={40}
+                className="w-9 h-9 sm:w-10 sm:h-10 object-contain"
+              />
             </motion.div>
             <motion.span
               className="text-lg sm:text-xl font-semibold tracking-tight font-[var(--font-playfair)] group-hover:text-[var(--solar-orange)] transition-colors duration-300"
@@ -1065,9 +1070,13 @@ export default function LandingPage() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-12">
             <div>
               <Link href="/" className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--solar-orange)] to-[var(--luminous-pink)] flex items-center justify-center text-white font-bold text-base shadow-lg">
-                  E
-                </div>
+                <Image
+                  src="/logo.png"
+                  alt="EmilyAI Logo"
+                  width={40}
+                  height={40}
+                  className="w-10 h-10 object-contain"
+                />
                 <span className="font-semibold text-xl tracking-tight font-[var(--font-playfair)]">
                   EmilyAI
                 </span>
