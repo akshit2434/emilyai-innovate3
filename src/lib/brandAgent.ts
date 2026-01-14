@@ -215,8 +215,11 @@ const generateMarketingImageTool = tool(
       const settings = styleSettings[style] || styleSettings.cinematic;
       
       // Build professional photography prompt
-      let enhancedPrompt = `[Role]: Expert Creative Director and Photographer.
-[Task]: Generate a high-conversion advertising image.
+      const role = complex ? "Expert Graphic Designer and Creative Director" : "Expert Creative Director and Photographer";
+      const task = complex ? "Generate a high-conversion advertising design with complex layout and typography" : "Generate a high-conversion advertising image";
+
+      let enhancedPrompt = `[Role]: ${role}.
+[Task]: ${task}.
 
 [Subject & Action]:
 ${subject ? `Show ${subject} in the center of the frame.` : prompt}
@@ -229,25 +232,32 @@ The product looks premium, high-quality, and desirable.
 - Lighting: ${lighting || settings.lighting}
 - Palette: ${settings.palette}`;
 
-      // Add text rendering for nanobanana (supports text)
-      if (text_headline && complex) {
+      // Add Designer Layout for nanobanana (supports text, diagrams, etc.)
+      if (complex) {
         enhancedPrompt += `
 
-[Text Rendering]:
-- Text to render: "${text_headline}" in a bold, modern sans-serif font.
-- Text location: ${text_location || "Floating elegantly above the product, integrated naturally into the scene"}
-- Ensure text is legible, spelled correctly, and integrated naturally into the scene.`;
+[Designer Layout]:
+${text_headline ? `- Typography: Render the text "${text_headline}" in a bold, modern typeface.` : "- Layout: Create a clean, sophisticated design layout."}
+${text_location ? `- Location: ${text_location}` : "- Integration: Integrate elements naturally into a magazine-style or premium ad layout."}
+- Sophistication: Use professional graphic design principles: hierarchy, balance, and intentional whitespace.
+- Capability: You can handle complex diagrams, detailed infographics, or rich text-heavy layouts if required by the prompt.`;
+      } else if (text_headline) {
+        // Basic text for seedream/simple mode
+        enhancedPrompt += `
+
+[Text]:
+- Feature the text "${text_headline}" clearly in the scene.`;
       }
 
       enhancedPrompt += `
 
 [Quality & Style]:
-Professional advertising photography, 8K resolution, magazine quality, ${settings.vibe} aesthetic.
+Professional advertising quality, 8K resolution, ${settings.vibe} aesthetic.
 
 [Negative Prompt]:
 (blurry, low quality, distorted text, bad spelling, watermark, extra limbs, ugly, messy composition, dull colors, amateur, stock photo look)`;
 
-      console.log("[IMAGE TOOL] Enhanced prompt:", enhancedPrompt.slice(0, 200));
+      console.log("[IMAGE TOOL] Enhanced prompt:", enhancedPrompt.slice(0, 300));
       
       // Generate and store the image using FAL AI
       const result = await generateAndStoreImage(productId, {
@@ -457,6 +467,9 @@ You seamlessly blend research, strategy, and content creation. Use any combinati
 - NEVER mention image IDs, URLs, or internal references to the user
 - When you generate images, the user sees them automatically in the chat
 - Users reference images as @image1, @image2, etc. when requesting edits
+- **MODEL SELECTION**: 
+  - Use `complex: true` (Nanobanana Pro) when the request requires intricate layouts, detailed diagrams, infographics, or rich typography. It acts like a professional Graphic Designer.
+  - Use `complex: false` (Seedream) for standard photography or simpler ads where speed is preferred.
 - **IMPORTANT**: When calling generate_marketing_image or edit_image, ALWAYS pass the Product ID from the context above
 - **IMPORTANT**: When a user mentions @image1, @image2, etc. and asks to edit/modify/change it, you MUST call the edit_image tool. Do NOT just say you edited it - actually call the tool!
 - Simply acknowledge that you've created/edited the image—don't share technical details
