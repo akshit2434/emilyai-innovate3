@@ -329,13 +329,11 @@ export async function saveAsset(
 
 import {
   videoAgent,
-  createInitialStoryline,
-  createInitialStoryboard,
   createNewVideoWorkflow,
   VideoWorkflowState
 } from "@/lib/videoAgent";
 
-// Start a new video workflow - creates initial storyline
+// Start a new video workflow - agent will set storyline via tool
 export async function initiateVideoWorkflow(
   productId: string,
   productContext: any,
@@ -347,11 +345,9 @@ export async function initiateVideoWorkflow(
     throw new Error("Unauthorized");
   }
 
-  // Create workflow and generate initial storyline
+  // Create workflow WITHOUT pre-generating storyline
+  // The videoAgent will set storyline via set_storyline tool, maintaining context
   const workflow = createNewVideoWorkflow(productContext, userRequest);
-  const storyline = await createInitialStoryline(productContext, userRequest);
-  workflow.storyline = storyline;
-  workflow.aspectRatio = storyline.aspectRatio;
 
   // Save to DB for persistence
   try {
@@ -474,15 +470,9 @@ export async function chatWithVideoAgent(
                 updatedWorkflow = applyWorkflowUpdate(updatedWorkflow, result);
 
                 // Generate storyboard when transitioning from storyline to storyboard
-                if (prevStage === "storyline" && updatedWorkflow.stage === "storyboard" && !updatedWorkflow.storyboard) {
-                  console.log("[VIDEO AGENT] Generating storyboard on stage transition...");
-                  const storyboard = await createInitialStoryboard(
-                    updatedWorkflow.productContext,
-                    updatedWorkflow.storyline!
-                  );
-                  updatedWorkflow.storyboard = storyboard;
-                  console.log("[VIDEO AGENT] Storyboard generated with", storyboard.clips.length, "clips");
-                }
+                // NOTE: Storyboard is now set by the videoAgent via set_storyboard tool,
+                // so we don't auto-generate here. The agent maintains context about user's
+                // clip count request.
 
                 // Use the tool's message as AI response if no text was accumulated
                 if (result.message && !accumulatedText) {
@@ -528,6 +518,24 @@ function applyWorkflowUpdate(
   const updated = { ...workflow };
 
   switch (toolResult.action) {
+    case "set_storyline":
+      // NEW: Set complete storyline from tool
+      updated.storyline = toolResult.storyline;
+      updated.aspectRatio = toolResult.storyline.aspectRatio;
+      console.log("[WORKFLOW] Set storyline:", toolResult.storyline.theme);
+      break;
+
+    case "set_storyboard":
+      // NEW: Set complete storyboard from tool AND transition to storyboard stage
+      updated.storyboard = toolResult.storyboard;
+      // Also transition to storyboard stage since we now have a storyboard
+      if (updated.stage === "storyline") {
+        updated.stage = "storyboard";
+        console.log("[WORKFLOW] Auto-transitioning to storyboard stage");
+      }
+      console.log("[WORKFLOW] Set storyboard with", toolResult.storyboard.clips.length, "clips");
+      break;
+
     case "update_storyline":
       if (updated.storyline) {
         updated.storyline = { ...updated.storyline, ...toolResult.updates };
@@ -586,8 +594,16 @@ function applyWorkflowUpdate(
     case "proceed":
       console.log("[WORKFLOW] Proceed from:", updated.stage);
       if (updated.stage === "storyline") {
+        if (!updated.storyline) {
+            console.error("[WORKFLOW] Cannot proceed: Storyline incomplete");
+            break; 
+        }
         updated.stage = "storyboard";
       } else if (updated.stage === "storyboard") {
+        if (!updated.storyboard) {
+            console.error("[WORKFLOW] Cannot proceed: Storyboard incomplete");
+            break;
+        }
         updated.stage = "generating";
         // Initialize generated frames and clips for each clip
         if (updated.storyboard) {
@@ -623,43 +639,34 @@ function applyWorkflowUpdate(
       updated.stage = "cancelled";
       break;
 
+    case "set_frame_prompts":
+      const { clipIndex, framePrompts } = toolResult;
+      // Initialize if needed
+      if (!updated.framePrompts) updated.framePrompts = {};
+      
+      // Store prompts map using clipId as key
+      if (updated.storyboard && updated.storyboard.clips[clipIndex - 1]) {
+        const clipId = updated.storyboard.clips[clipIndex - 1].id;
+        updated.framePrompts[clipId] = framePrompts;
+      }
+      break;
+
     // Note: "finalize" action removed - generation happens via triggerFrameGeneration
   }
 
   return updated;
 }
 
-// Generate storyboard for workflow
-export async function generateStoryboardForWorkflow(
-  workflow: VideoWorkflowState
-): Promise<VideoWorkflowState> {
-  const { userId } = await auth();
+// Note: generateStoryboardForWorkflow has been removed.
+// The videoAgent now sets storyboard via set_storyboard tool,
+// maintaining full context about user's requirements.
 
-  if (!userId) {
-    throw new Error("Unauthorized");
-  }
-
-  if (!workflow.storyline) {
-    throw new Error("No storyline to generate storyboard from");
-  }
-
-  const storyboard = await createInitialStoryboard(
-    workflow.productContext,
-    workflow.storyline
-  );
-
-  return {
-    ...workflow,
-    storyboard,
-    stage: "storyboard",
-  };
-}
-
+// Generate frames for workflow using FAL AI
 // Generate frames for workflow using FAL AI
 export async function generateFramesForWorkflow(
   workflow: VideoWorkflowState,
   productId?: string,
-  framePrompts?: Map<string, { firstFramePrompt: string; lastFramePrompt: string; referenceImageIds?: string[]; useComplexModel?: boolean }>,
+  framePrompts?: Record<string, { firstFramePrompt: string; lastFramePrompt: string; videoGenerationPrompt?: string; audioGenerationPrompt?: string; referenceImageIds?: string[]; useComplexModel?: boolean }>,
   availableImages?: Map<string, { id: string; url: string; description: string; source: string }>
 ) {
   const { userId } = await auth();
@@ -720,9 +727,12 @@ export async function generateFramesForWorkflow(
         }
       }
 
+      // Convert framePrompts Record to Map for pipeline
+      const promptsMap = framePrompts ? new Map(Object.entries(framePrompts)) : undefined;
+
       // Run pipeline with options including aspect ratio
       for await (const progress of runVideoGenerationPipeline(clips, {
-        framePrompts,
+        framePrompts: promptsMap,
         availableImages: imagesMap,
         aspectRatio: aspectRatio as "9:16" | "16:9",
         productId,

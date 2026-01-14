@@ -92,6 +92,7 @@ export async function generateImage(
       input = {
         prompt,
         image_size: `auto_${resolution === "4K" ? "4K" : resolution === "2K" ? "2K" : "2K"}`,
+        aspect_ratio: aspectRatio === "auto" ? "1:1" : aspectRatio,
         num_images: numImages,
         max_images: 1,
         enable_safety_checker: true,
@@ -116,6 +117,7 @@ export async function generateImage(
       input = {
         prompt,
         image_size: `auto_${resolution === "4K" ? "4K" : "2K"}`,
+        aspect_ratio: aspectRatio === "auto" ? "1:1" : aspectRatio,
         num_images: numImages,
         max_images: 1,
         enable_safety_checker: true,

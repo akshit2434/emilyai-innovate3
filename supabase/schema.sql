@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS video_frames (
   url TEXT NOT NULL,
   storage_path TEXT,
   status TEXT DEFAULT 'done' CHECK (status IN ('pending', 'generating', 'done', 'failed')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(workflow_id, clip_id, frame_type)
 );
 
 -- Video Clips table - stores generated video clips
@@ -113,7 +114,8 @@ CREATE TABLE IF NOT EXISTS video_clips (
   storage_path TEXT,
   duration INTEGER,
   status TEXT DEFAULT 'done' CHECK (status IN ('pending', 'generating', 'done', 'failed')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(workflow_id, clip_id)
 );
 
 -- Indexes for video workflow tables

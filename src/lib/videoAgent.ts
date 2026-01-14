@@ -73,6 +73,15 @@ export interface VideoWorkflowState {
   availableImages: AvailableImage[];
   // Aspect ratio for the video (derived from storyline)
   aspectRatio?: "9:16" | "16:9";
+  // Detailed prompts for frame and video generation
+  framePrompts?: Record<string, { 
+    firstFramePrompt: string; 
+    lastFramePrompt: string; 
+    videoGenerationPrompt?: string; 
+    audioGenerationPrompt?: string; 
+    referenceImageIds?: string[]; 
+    useComplexModel?: boolean; 
+  }>;
 }
 
 // ============================================================================
@@ -112,7 +121,7 @@ const VideoAgentState = Annotation.Root({
 // ============================================================================
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-3-flash-preview",
+  model: "gemini-2.5-pro",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.8,
   streaming: true,
@@ -257,11 +266,73 @@ const cancelWorkflowTool = tool(
   }
 );
 
-// Note: finalize_video removed - generation is triggered via proceed_to_next_stage when in storyboard stage
+// Tool to set the complete storyline (replaces headless createInitialStoryline)
+const setStorylineTool = tool(
+  async ({ theme, hook, narrative, estimatedDuration, targetPlatform, aspectRatio }) => {
+    console.log("[VIDEO AGENT] set_storyline:", { theme, hook, estimatedDuration });
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "set_storyline",
+      storyline: { theme, hook, narrative, estimatedDuration, targetPlatform, aspectRatio },
+      message: "Storyline set successfully.",
+    });
+  },
+  {
+    name: "set_storyline",
+    description: "Set the complete storyline for the video. Call this FIRST when starting a new video workflow to define the concept.",
+    schema: z.object({
+      theme: z.string().describe("One-line theme of the video"),
+      hook: z.string().describe("Attention-grabbing first 3 seconds"),
+      narrative: z.string().describe("2-3 sentence narrative arc"),
+      estimatedDuration: z.number().describe("Estimated total duration in seconds"),
+      targetPlatform: z.enum(["instagram", "tiktok", "youtube_shorts"]).describe("Target platform"),
+      aspectRatio: z.enum(["9:16", "16:9"]).describe("Aspect ratio - 9:16 for vertical (TikTok/Reels), 16:9 for landscape"),
+    }),
+  }
+);
+
+// Tool to set the complete storyboard (replaces headless createInitialStoryboard)
+const setStoryboardTool = tool(
+  async ({ clips }) => {
+    console.log("[VIDEO AGENT] set_storyboard:", { clipCount: clips.length });
+    const formattedClips = clips.map((c: any, i: number) => ({
+      id: `clip_${i + 1}`,
+      index: i + 1,
+      duration: c.duration as 4 | 6 | 8,
+      description: c.description,
+      isContinuation: c.isContinuation || false,
+    }));
+    const totalDuration = formattedClips.reduce((sum: number, c: any) => sum + c.duration, 0);
+    
+    return JSON.stringify({
+      type: "workflow_update",
+      action: "set_storyboard",
+      storyboard: {
+        clips: formattedClips,
+        totalDuration,
+      },
+      message: `Storyboard set with ${clips.length} clips (${totalDuration}s total).`,
+    });
+  },
+  {
+    name: "set_storyboard",
+    description: `Set the complete storyboard with all clips. Call this when transitioning from storyline to storyboard stage.
+
+IMPORTANT: Respect the user's original request for clip count! If user asked for "2 clips", create exactly 2 clips.
+Each clip can be 4, 6, or 8 seconds.`,
+    schema: z.object({
+      clips: z.array(z.object({
+        duration: z.number().describe("Duration in seconds (must be 4, 6, or 8)"),
+        description: z.string().describe("Detailed description of what happens in this clip"),
+        isContinuation: z.boolean().optional().describe("Whether this continues from previous clip's scene"),
+      })).describe("Array of clips in order"),
+    }),
+  }
+);
 
 // Tool for setting frame prompts with image references
 const setClipFramePromptsTool = tool(
-  async ({ clipIndex, firstFramePrompt, lastFramePrompt, referenceImageIds, useComplexModel }) => {
+  async ({ clipIndex, firstFramePrompt, lastFramePrompt, videoGenerationPrompt, audioGenerationPrompt, referenceImageIds, useComplexModel }) => {
     console.log("[VIDEO AGENT] set_clip_frame_prompts:", { clipIndex, firstFramePrompt: firstFramePrompt?.slice(0, 40), referenceImageIds });
     return JSON.stringify({
       type: "workflow_update",
@@ -270,34 +341,37 @@ const setClipFramePromptsTool = tool(
       framePrompts: {
         firstFramePrompt,
         lastFramePrompt,
+        videoGenerationPrompt,
+        audioGenerationPrompt,
         referenceImageIds: referenceImageIds || [],
         useComplexModel: useComplexModel || false,
       },
-      message: `Frame prompts set for clip ${clipIndex}. References: ${referenceImageIds?.join(", ") || "none"}.`,
+      message: `Frame and video prompts set for clip ${clipIndex}. References: ${referenceImageIds?.join(", ") || "none"}.`,
     });
   },
   {
     name: "set_clip_frame_prompts",
-    description: `Set the first and last frame generation prompts for a clip. You can reference available images using @image1, @image2, etc. 
+    description: `Set the detailed prompts for generating the clip's frames and the video motion/audio.
     
 IMPORTANT: The order of referenceImageIds matters! When you mention @image1 in the prompt, it refers to the first image in the referenceImageIds array.
-
 Example usage:
 - Prompt: "Show the person from @image1 drinking the product from @image2"
-- referenceImageIds: ["image1", "image2"]
-
-This ensures coherence by using existing images as references for frame generation.`,
+- referenceImageIds: ["image1", "image2"]`,
     schema: z.object({
       clipIndex: z.number().describe("The clip number (1-based index)"),
-      firstFramePrompt: z.string().describe("Detailed prompt for the first/opening frame of the clip. Use @image1, @image2, etc. to reference available images."),
-      lastFramePrompt: z.string().describe("Detailed prompt for the last/closing frame of the clip. Should show natural progression from first frame."),
-      referenceImageIds: z.array(z.string()).optional().describe("Array of image IDs to use as references, IN ORDER. E.g., ['image1', 'image2']. The order matches how you reference them in prompts."),
+      firstFramePrompt: z.string().describe("Detailed visual prompt for the OPENING frame. Describe composition, lighting, subject, mood."),
+      lastFramePrompt: z.string().describe("Detailed visual prompt for the CLOSING frame. Show progression from start frame."),
+      videoGenerationPrompt: z.string().optional().describe("Instructions for Visual Motion: Camera movement (pan, zoom), subject action, lighting shifts."),
+      audioGenerationPrompt: z.string().optional().describe("Instructions for Audio & SFX: Ambience, specific sound effects, music mood."),
+      referenceImageIds: z.array(z.string()).optional().describe("Array of image IDs to use as references, IN ORDER. E.g., ['image1', 'image2']."),
       useComplexModel: z.boolean().optional().describe("Use nanobanana pro (complex=true) for detailed scenes, or seedream (complex=false, default) for simple scenes."),
     }),
   }
 );
 
 const videoTools = [
+  setStorylineTool,        // NEW: Set complete storyline
+  setStoryboardTool,       // NEW: Set complete storyboard with clips
   updateStorylineTool,
   updateClipTool,
   addClipTool,
@@ -306,7 +380,6 @@ const videoTools = [
   proceedToNextStageTool,
   goBackStageTool,
   cancelWorkflowTool,
-  // finalize_video removed - proceed_to_next_stage handles storyboard -> generating transition
 ];
 
 const videoToolNode = new ToolNode(videoTools);
@@ -322,41 +395,73 @@ const callVideoModel = async (state: typeof VideoAgentState.State) => {
   const workflowContext = buildWorkflowContext(workflow);
 
   const systemPrompt = new SystemMessage(`
-You are a video ad creative director helping create a short-form video ad for "${product?.name}".
+You are an expert AI advertising creative director specializing in short-form video content for social media platforms (Instagram Reels, TikTok, YouTube Shorts). Your role is to conceptualize, plan, and execute compelling ad campaigns by breaking them down into individual video clips.
+
+**BRAND CONTEXT:**
+- Product: ${product?.name}
+- Description: ${product?.description || "Not set"}
+- Target Audience: ${product?.extracted_info?.target_audience || "Not set"}
+- Value Proposition: ${product?.extracted_info?.value_proposition || "Not set"}
+- Industry: ${product?.extracted_info?.industry || "Not set"}
+- Tagline: ${product?.extracted_info?.tagline || "Not set"}
 
 **CURRENT WORKFLOW STATE:**
 ${workflowContext}
 
+**YOUR WORKFLOW:**
+
+### Step 1: Storyline Development
+Create a cohesive narrative arc that hooks viewers, builds interest, and ends with a strong CTA.
+- Use 'set_storyline' to define the concept.
+- Wait for user approval.
+
+### Step 2: Storyboard & Clip Specifications
+Once storyline is approved, use 'set_storyboard' to define the clips.
+IMPORTANT: You MUST call 'set_storyboard' to define the clips before you can set prompts or proceed.
+Respect user's requested clip count (e.g. "2 clips"). Each clip must be 4, 6, or 8 seconds.
+
+### Step 3: Detailed Prompts (CRITICAL)
+After setting the storyboard (and only AFTER), you MUST use 'set_clip_frame_prompts' for EACH clip to define:
+1. **Start Frame Prompt**: Detailed image prompt for the opening frame. Include composition, lighting, colors, subject, expressions, mood.
+2. **End Frame Prompt**: Detailed image prompt for the final frame. Show progression.
+3. **Video Generation Prompt**: Instructions for Visual Motion (pan, zoom, action) and Audi/SFX (ambience, sound effects).
+
+**EXAMPLE PROMPTS:**
+- Start Frame: "Close-up shot of a woman's face, eyes closed, serene expression, soft golden hour lighting from left, warm peach tones, text overlay 'WAKE UP REFRESHED' in thin sans-serif white font top-center, minimalist aesthetic."
+- End Frame: "Same woman, eyes now open with excited expression, brighter lighting, text changed to 'FEEL THE DIFFERENCE', product visible bottom-right."
+- Video Motion: "Smooth transition as woman opens eyes. Camera slow zoom in."
+- Audio/SFX: "Gentle morning birds chirping fade in, soft ambient synthesizer swell, crisp 'whoosh' sound effect as text changes."
+
 **YOUR TOOLS:**
+- set_storyline: Set the complete storyline
+- set_storyboard: Set ALL clips (triggers transition to Storyboard stage)
 - update_storyline: Modify theme/hook/narrative
-- update_clip: Edit a specific clip's description or duration
-- add_clip: Add a new clip to the storyboard
-- remove_clip: Delete a clip
-- set_clip_frame_prompts: Set detailed first/last frame prompts with optional image references
-- proceed_to_next_stage: Move forward ONLY when user explicitly approves
+- update_clip: Edit a specific clip's description/duration
+- add_clip / remove_clip: Modify clip count
+- set_clip_frame_prompts: Set detailed visual and motion prompts for a clip (Use this for EVERY clip!)
+- proceed_to_next_stage: Move forward (ONLY when user explicitly approves)
 - go_back_stage: Return to previous stage
-- cancel_workflow: Exit video mode
-
-**IMAGE REFERENCES FOR FRAME GENERATION:**
-When setting frame prompts, you can reference available images using @image1, @image2, etc.
-- The referenceImageIds array ORDER matters - it determines which image is @image1, @image2, etc.
-- Example prompt: "Show the person from @image1 drinking the product from @image2"
-- Example referenceImageIds: ["image1", "image2"]
-- This ensures visual consistency and coherence across frames
-
-**CRITICAL - STAGE TRANSITIONS:**
-- ONLY call proceed_to_next_stage when user EXPLICITLY says to proceed/continue/next/looks good/approve
-- If user gives feedback or suggestions, APPLY the changes first, then ASK if they want to proceed
-- Do NOT automatically proceed after making changes - always confirm with user first
 
 **STAGE BEHAVIOR:**
-- STORYLINE stage: Present the storyline. Wait for user to explicitly approve before moving to storyboard.
-- STORYBOARD stage: Present clips. You MAY set frame prompts for clips if user wants specific visuals. Wait for user approval to start generation.
-- GENERATING stage: Video is being generated automatically. Tell user to wait and watch the progress.
-- COMPLETE: Video is ready to view.
+- STORYLINE: Call set_storyline -> User Approve -> Call set_storyboard.
+- STORYBOARD: **Call set_clip_frame_prompts for EACH clip** to enrich details. User Approve -> Call proceed_to_next_stage.
+- GENERATING: Wait.
+- COMPLETE: Done.
 
-**STYLE:** Creative, collaborative, concise. Always ask for explicit approval before major transitions.
-  `);
+**IMPORTANT:** 
+- set_storyboard auto-transitions to STORYBOARD stage.
+- In STORYBOARD stage, iterate on 'set_clip_frame_prompts' to ensure high quality before proceeding.
+- Only call proceed_to_next_stage to start generation when user says "looks good" or "start".
+
+**IMAGE REFERENCES:**
+- Use @image1, @image2 in prompts to reference available images.
+- Pass ["image1", "image2"] in referenceImageIds to link them.
+
+**STYLE:**
+- Be creative, vivid, and specific.
+- Think like a cinematographer and sound designer.
+- Optimize for mobile viewing.
+`);
 
   const modelWithTools = llm.bindTools(videoTools);
   const response = await modelWithTools.invoke([systemPrompt, ...messages]);
@@ -365,6 +470,12 @@ When setting frame prompts, you can reference available images using @image1, @i
 
 function buildWorkflowContext(workflow: VideoWorkflowState): string {
   let context = `Stage: ${workflow.stage.toUpperCase()}\n`;
+
+  // Show the user's original request - CRITICAL for respecting clip count, duration, etc.
+  if (workflow.userRequest) {
+    context += `\nUSER'S ORIGINAL REQUEST:\n"${workflow.userRequest}"\n`;
+    context += `(IMPORTANT: Respect any specific requirements like clip count or duration mentioned here!)\n`;
+  }
 
   // Show available images for reference
   if (workflow.availableImages && workflow.availableImages.length > 0) {
@@ -422,97 +533,9 @@ export const videoAgent = videoWorkflow.compile();
 // Helper Functions
 // ============================================================================
 
-export async function createInitialStoryline(
-  productContext: any,
-  userRequest: string
-): Promise<VideoStoryline> {
-  const storyLlm = new ChatGoogleGenerativeAI({
-    model: "gemini-3-flash-preview",
-    apiKey: process.env.GOOGLE_GENAI_API_KEY,
-    temperature: 0.8,
-  });
-
-  const systemPrompt = `Create a video ad concept for "${productContext?.name}".
-User request: ${userRequest}
-
-Return JSON only:
-{
-  "theme": "one-line theme",
-  "hook": "attention-grabbing first 3 seconds",
-  "narrative": "2-3 sentence arc",
-  "estimatedDuration": 40,
-  "targetPlatform": "tiktok",
-  "aspectRatio": "9:16"
-}
-
-IMPORTANT: Set aspectRatio based on platform:
-- instagram, tiktok → "9:16" (vertical)
-- youtube_shorts → "9:16" (vertical)
-- For landscape YouTube content → "16:9"`;
-
-  const response = await storyLlm.invoke([
-    new SystemMessage(systemPrompt),
-    new HumanMessage("Create the concept now."),
-  ]);
-
-  try {
-    const content = typeof response.content === "string" ? response.content : "";
-    return JSON.parse(content.replace(/```json\n?|\n?```/g, "").trim());
-  } catch {
-    return {
-      theme: "Brand showcase",
-      hook: "Discover something amazing",
-      narrative: "A journey through the brand experience",
-      estimatedDuration: 40,
-      targetPlatform: "tiktok",
-      aspectRatio: "9:16",
-    };
-  }
-}
-
-export async function createInitialStoryboard(
-  productContext: any,
-  storyline: VideoStoryline
-): Promise<VideoStoryboard> {
-  const storyLlm = new ChatGoogleGenerativeAI({
-    model: "gemini-3-flash-preview",
-    apiKey: process.env.GOOGLE_GENAI_API_KEY,
-    temperature: 0.8,
-  });
-
-  const systemPrompt = `Break down this video concept into clips (4s, 6s, or 8s each).
-Brand: ${productContext?.name}
-Theme: ${storyline.theme}
-Duration: ~${storyline.estimatedDuration}s
-
-Return JSON only:
-{
-  "clips": [{"id": "clip_1", "index": 1, "duration": 4, "description": "...", "isContinuation": false}],
-  "totalDuration": 40
-}`;
-
-  const response = await storyLlm.invoke([
-    new SystemMessage(systemPrompt),
-    new HumanMessage("Create the storyboard now."),
-  ]);
-
-  try {
-    const content = typeof response.content === "string" ? response.content : "";
-    return JSON.parse(content.replace(/```json\n?|\n?```/g, "").trim());
-  } catch {
-    return {
-      clips: [
-        { id: "clip_1", index: 1, duration: 4, description: "Hook - attention grab", isContinuation: false },
-        { id: "clip_2", index: 2, duration: 6, description: "Problem/need", isContinuation: false },
-        { id: "clip_3", index: 3, duration: 8, description: "Solution reveal", isContinuation: false },
-        { id: "clip_4", index: 4, duration: 6, description: "Benefits", isContinuation: true },
-        { id: "clip_5", index: 5, duration: 8, description: "Social proof", isContinuation: false },
-        { id: "clip_6", index: 6, duration: 4, description: "CTA", isContinuation: false },
-      ],
-      totalDuration: 36,
-    };
-  }
-}
+// Note: createInitialStoryline and createInitialStoryboard have been removed.
+// The videoAgent now uses set_storyline and set_storyboard tools directly,
+// maintaining full conversation context about user's requirements (e.g., clip count).
 
 export function createNewVideoWorkflow(
   productContext: any,

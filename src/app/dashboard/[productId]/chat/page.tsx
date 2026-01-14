@@ -23,7 +23,6 @@ import {
   updateChatSession,
   initiateVideoWorkflow,
   chatWithVideoAgent,
-  generateStoryboardForWorkflow,
   generateFramesForWorkflow,
   loadActiveVideoWorkflow
 } from "@/app/actions/brand";
@@ -105,6 +104,7 @@ export default function ProductChatPage() {
   const [videoModeMessages, setVideoModeMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [videoStreamingText, setVideoStreamingText] = useState("");
   const [isVideoModeLoading, setIsVideoModeLoading] = useState(false);
+  const isGeneratingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -330,7 +330,11 @@ export default function ProductChatPage() {
 
               // Auto-activate video mode
               setActiveVideoWorkflow(videoState);
-              setVideoModeMessages([]);
+              
+              // Pre-populate with the user's goal as the first message
+              // This gives the video agent context to create the storyline
+              const initialMessage = chunk.toolResult.goal;
+              setVideoModeMessages([{ role: "user", content: initialMessage }]);
 
               setMessages((prev) => {
                 const next = [...prev];
@@ -340,6 +344,69 @@ export default function ProductChatPage() {
                 }
                 return next;
               });
+
+              // Immediately trigger the video agent to process the request
+              // This will cause it to create the storyline
+              debugLog("Auto-triggering video agent with goal:", initialMessage.slice(0, 50));
+              
+              // Use setTimeout to ensure state is updated before calling
+              setTimeout(async () => {
+                setIsVideoModeLoading(true);
+                setVideoStreamingText("");
+                
+                try {
+                  const stream = await chatWithVideoAgent(
+                    productId,
+                    [{ role: "user", content: initialMessage }],
+                    videoState,
+                    product
+                  );
+
+                  let fullText = "";
+                  let updatedWorkflow = videoState;
+
+                  for await (const streamChunk of readStreamableValue(stream)) {
+                    if (streamChunk?.text) {
+                      fullText += streamChunk.text;
+                      setVideoStreamingText(fullText);
+                    }
+                    if (streamChunk?.workflow) {
+                      updatedWorkflow = streamChunk.workflow;
+                      setActiveVideoWorkflow(streamChunk.workflow);
+                      setMessages((prev) =>
+                        prev.map((m) =>
+                          m.videoWorkflow?.id === streamChunk.workflow.id
+                            ? { ...m, videoWorkflow: streamChunk.workflow }
+                            : m
+                        )
+                      );
+                    }
+                  }
+
+                  // Add assistant response
+                  if (fullText) {
+                    setVideoModeMessages([
+                      { role: "user", content: initialMessage },
+                      { role: "assistant", content: fullText }
+                    ]);
+                    
+                    // Sync messages to workflow
+                    const workflowWithMessages = {
+                      ...updatedWorkflow,
+                      messages: [
+                        { role: "user", content: initialMessage },
+                        { role: "assistant", content: fullText }
+                      ],
+                    };
+                    setActiveVideoWorkflow(workflowWithMessages);
+                  }
+                } catch (err) {
+                  console.error("Auto-trigger video agent error:", err);
+                }
+                
+                setIsVideoModeLoading(false);
+                setVideoStreamingText("");
+              }, 100);
             } catch (error) {
               console.error("Failed to start video workflow:", error);
             }
@@ -410,7 +477,7 @@ export default function ProductChatPage() {
 
     try {
       // Pass productId for DB persistence
-      const stream = await generateFramesForWorkflow(workflow, productId);
+      const stream = await generateFramesForWorkflow(workflow, productId, workflow.framePrompts);
 
       for await (const chunk of readStreamableValue(stream)) {
         debugLog("Frame generation chunk:", chunk);
@@ -504,8 +571,10 @@ export default function ProductChatPage() {
           }
 
           // Trigger video generation when entering generating stage
-          if (prevStage === "storyboard" && newStage === "generating") {
-            debugLog("🎬 Triggering video generation pipeline!");
+          // We use a ref to prevent double-triggering
+          if (newStage === "generating" && !isGeneratingRef.current) {
+            debugLog("🎬 Triggering video generation pipeline (State detected)");
+            isGeneratingRef.current = true;
             // Small delay to let state update
             setTimeout(() => {
               triggerFrameGeneration(chunk.workflow);

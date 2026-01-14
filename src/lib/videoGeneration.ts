@@ -7,6 +7,11 @@
 import { generateImage, generateVideo, uploadGeneratedImage, uploadGeneratedVideo } from "./mediaGeneration";
 import { ImageReference } from "./frameGeneration";
 
+const ENABLE_MOCK_VIDEO = process.env.ENABLE_MOCK_VIDEO === "true" || process.env.NEXT_PUBLIC_ENABLE_MOCK_VIDEO === "true";
+const ENABLE_MOCK_IMAGE = process.env.ENABLE_MOCK_IMAGE === "true" || process.env.NEXT_PUBLIC_ENABLE_MOCK_IMAGE === "true";
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -35,6 +40,8 @@ export interface StitchedVideo {
 export interface ClipFramePrompts {
   firstFramePrompt: string;
   lastFramePrompt: string;
+  videoGenerationPrompt?: string;
+  audioGenerationPrompt?: string;
   referenceImageIds?: string[];
   useComplexModel?: boolean;
 }
@@ -81,19 +88,37 @@ export async function generateRealFrame(
 
 [Requirements]:
 - Cinematic quality, professional advertising aesthetic
-- 16:9 aspect ratio for video frame
+- ${options?.aspectRatio || "9:16"} aspect ratio for video frame
 - Clear, sharp imagery suitable for video keyframe
 - Consistent lighting and color grading`;
 
   // Get reference image URLs in order
   const imageRefs = options?.referenceImages?.map(ref => ref.url);
 
+  if (ENABLE_MOCK_IMAGE) {
+    console.log(`[VideoGen] [MOCK MODE] Simulating ${frameType} frame generation for ${clipId}...`);
+    // Random delay between 1.5 - 3.5 seconds
+    await sleep(1500 + Math.random() * 2000);
+    
+    // Choose a high quality mock image based on frame type
+    const mockUrl = frameType === "start" 
+      ? "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80" 
+      : "https://images.unsplash.com/photo-1614850523296-d8c1af93d400?w=1200&q=80";
+
+    return {
+      id: `mock_frame_${Date.now()}_${frameType}`,
+      url: mockUrl,
+      clipId,
+      frameType,
+    };
+  }
+
   try {
     const result = await generateImage({
       prompt: enhancedPrompt,
       complex: options?.complex ?? false,
       imageRefs: imageRefs && imageRefs.length > 0 ? imageRefs : undefined,
-      aspectRatio: options?.aspectRatio || "16:9",
+      aspectRatio: options?.aspectRatio || "9:16",
       resolution: "2K",
       numImages: 1,
     });
@@ -113,6 +138,16 @@ export async function generateRealFrame(
 }
 
 /**
+ * Map storyboard duration to VEO 3.1 supported durations
+ * VEO 3.1 only accepts 4s, 6s, or 8s
+ */
+function mapToVeoDuration(seconds: number): "4s" | "6s" | "8s" {
+  if (seconds <= 4) return "4s";
+  if (seconds <= 6) return "6s";
+  return "8s";
+}
+
+/**
  * Generate a video clip from start and end frames using FAL AI VEO 3.1
  */
 export async function generateRealClip(
@@ -121,16 +156,42 @@ export async function generateRealClip(
   startFrameUrl: string,
   endFrameUrl: string,
   durationSeconds: number,
-  aspectRatio: "9:16" | "16:9" = "9:16"
+  aspectRatio: "9:16" | "16:9" = "9:16",
+  videoPrompt?: string
 ): Promise<GeneratedClip> {
   console.log(`[VideoGen] Generating video clip ${clipId} (${durationSeconds}s, ${aspectRatio})...`);
 
   // Map duration to VEO 3.1 supported durations
   const veoDuration = mapToVeoDuration(durationSeconds);
+  
+  // Use specific video prompt if available, fallback to description
+  const prompt = videoPrompt || clipDescription;
+
+  if (ENABLE_MOCK_VIDEO) {
+    console.log(`[VideoGen] [MOCK MODE] Simulating video clip generation for ${clipId}...`);
+    // Random delay between 3 - 6 seconds
+    await sleep(3000 + Math.random() * 3000);
+
+    // Return a generic high-quality sample video
+    // Big Buck Bunny or similar stable sample videos
+    const mockClips = [
+      "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+      "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
+    ];
+    const mockUrl = mockClips[Math.floor(Math.random() * mockClips.length)];
+
+    return {
+      id: `mock_clip_${Date.now()}`,
+      url: mockUrl,
+      clipId,
+      duration: durationSeconds,
+    };
+  }
 
   try {
     const result = await generateVideo({
-      prompt: clipDescription,
+      prompt: prompt,
       firstFrameUrl: startFrameUrl,
       lastFrameUrl: endFrameUrl,
       duration: veoDuration,
@@ -151,16 +212,6 @@ export async function generateRealClip(
     console.error(`[VideoGen] Clip generation failed for ${clipId}:`, error);
     throw new Error(`Clip generation failed: ${error.message}`);
   }
-}
-
-/**
- * Map storyboard duration to VEO 3.1 supported durations
- * VEO 3.1 only accepts 4s, 6s, or 8s
- */
-function mapToVeoDuration(seconds: number): "4s" | "6s" | "8s" {
-  if (seconds <= 4) return "4s";
-  if (seconds <= 6) return "6s";
-  return "8s";
 }
 
 /**
@@ -297,13 +348,22 @@ export async function* runVideoGenerationPipeline(
       clips: [...generatedClips],
     };
 
+    // Get custom prompts if available
+    const customPrompts = options?.framePrompts?.get(clip.id);
+    
+    // Construct video prompt from video+audio prompts if available
+    const videoPrompt = customPrompts?.videoGenerationPrompt 
+      ? `${customPrompts.videoGenerationPrompt}${customPrompts.audioGenerationPrompt ? ` AUDIO: ${customPrompts.audioGenerationPrompt}` : ""}`
+      : undefined;
+
     const generatedClip = await generateRealClip(
       clip.id,
       clip.description,
       frame.startUrl!,
       frame.endUrl!,
       clip.duration,
-      options?.aspectRatio || "9:16"
+      options?.aspectRatio || "9:16",
+      videoPrompt
     );
     generatedClips.push(generatedClip);
 

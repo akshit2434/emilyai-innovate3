@@ -104,52 +104,61 @@ export async function saveGeneratedFrame(
     // Upload to storage if productId is provided
     if (productId) {
         try {
-            const uploaded = await uploadGeneratedImage(url, productId, `video_frame_${clipId}_${frameType}.png`);
+            const uploaded = await uploadGeneratedImage(url, productId, `video_frame_${clipId}_${frameType}_${Date.now()}.png`);
             storagePath = uploaded.path;
         } catch (error) {
             console.warn("[VideoDb] Failed to upload frame to storage:", error);
         }
     }
 
-    const { data, error } = await supabaseAdmin
+    // Check if frame exists
+    const { data: existingFrame } = await supabaseAdmin
         .from("video_frames")
-        .upsert({
-            workflow_id: workflowId,
-            clip_id: clipId,
-            frame_type: frameType,
-            url,
-            storage_path: storagePath,
-            status: "done",
-        }, {
-            onConflict: "workflow_id,clip_id,frame_type",
-            ignoreDuplicates: false,
-        })
         .select("id")
-        .single();
+        .eq("workflow_id", workflowId)
+        .eq("clip_id", clipId)
+        .eq("frame_type", frameType)
+        .maybeSingle();
 
-    if (error) {
-        // If conflict, try update instead
-        const { data: updateData, error: updateError } = await supabaseAdmin
+    if (existingFrame) {
+        // Update existing
+        const { data, error } = await supabaseAdmin
             .from("video_frames")
             .update({
                 url,
                 storage_path: storagePath,
                 status: "done",
             })
-            .eq("workflow_id", workflowId)
-            .eq("clip_id", clipId)
-            .eq("frame_type", frameType)
+            .eq("id", existingFrame.id)
             .select("id")
             .single();
 
-        if (updateError) {
-            console.error("[VideoDb] Failed to save frame:", updateError);
-            throw new Error(`Failed to save frame: ${updateError.message}`);
+        if (error) {
+            console.error("[VideoDb] Failed to update frame:", error);
+            throw new Error(`Failed to update frame: ${error.message}`);
         }
-        return updateData.id;
-    }
+        return data.id;
+    } else {
+        // Insert new
+        const { data, error } = await supabaseAdmin
+            .from("video_frames")
+            .insert({
+                workflow_id: workflowId,
+                clip_id: clipId,
+                frame_type: frameType,
+                url,
+                storage_path: storagePath,
+                status: "done",
+            })
+            .select("id")
+            .single();
 
-    return data.id;
+        if (error) {
+            console.error("[VideoDb] Failed to insert frame:", error);
+            throw new Error(`Failed to insert frame: ${error.message}`);
+        }
+        return data.id;
+    }
 }
 
 /**
@@ -169,32 +178,24 @@ export async function saveGeneratedClip(
     // Upload to storage if productId is provided
     if (productId) {
         try {
-            const uploaded = await uploadGeneratedVideo(url, productId, `video_clip_${clipId}.mp4`);
+            const uploaded = await uploadGeneratedVideo(url, productId, `video_clip_${clipId}_${Date.now()}.mp4`);
             storagePath = uploaded.path;
         } catch (error) {
             console.warn("[VideoDb] Failed to upload clip to storage:", error);
         }
     }
 
-    const { data, error } = await supabaseAdmin
+    // Check if clip exists
+    const { data: existingClip } = await supabaseAdmin
         .from("video_clips")
-        .upsert({
-            workflow_id: workflowId,
-            clip_id: clipId,
-            url,
-            storage_path: storagePath,
-            duration,
-            status: "done",
-        }, {
-            onConflict: "workflow_id,clip_id",
-            ignoreDuplicates: false,
-        })
         .select("id")
-        .single();
+        .eq("workflow_id", workflowId)
+        .eq("clip_id", clipId)
+        .maybeSingle();
 
-    if (error) {
-        // If conflict, try update instead
-        const { data: updateData, error: updateError } = await supabaseAdmin
+    if (existingClip) {
+        // Update existing
+        const { data, error } = await supabaseAdmin
             .from("video_clips")
             .update({
                 url,
@@ -202,19 +203,36 @@ export async function saveGeneratedClip(
                 duration,
                 status: "done",
             })
-            .eq("workflow_id", workflowId)
-            .eq("clip_id", clipId)
+            .eq("id", existingClip.id)
             .select("id")
             .single();
 
-        if (updateError) {
-            console.error("[VideoDb] Failed to save clip:", updateError);
-            throw new Error(`Failed to save clip: ${updateError.message}`);
+        if (error) {
+            console.error("[VideoDb] Failed to update clip:", error);
+            throw new Error(`Failed to update clip: ${error.message}`);
         }
-        return updateData.id;
-    }
+        return data.id;
+    } else {
+        // Insert new
+        const { data, error } = await supabaseAdmin
+            .from("video_clips")
+            .insert({
+                workflow_id: workflowId,
+                clip_id: clipId,
+                url,
+                storage_path: storagePath,
+                duration,
+                status: "done",
+            })
+            .select("id")
+            .single();
 
-    return data.id;
+        if (error) {
+            console.error("[VideoDb] Failed to insert clip:", error);
+            throw new Error(`Failed to insert clip: ${error.message}`);
+        }
+        return data.id;
+    }
 }
 
 // ============================================================================
