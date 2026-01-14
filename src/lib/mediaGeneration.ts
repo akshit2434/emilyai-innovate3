@@ -182,7 +182,7 @@ export async function uploadGeneratedImage(
 
     const blob = await response.blob();
     const buffer = Buffer.from(await blob.arrayBuffer());
-    
+
     // Generate filename if not provided
     const ext = blob.type.includes("png") ? "png" : "jpg";
     const name = filename || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -258,7 +258,7 @@ export function getStoredImageUrl(path: string): string {
   const { data } = supabaseAdmin.storage
     .from("assets")
     .getPublicUrl(path);
-  
+
   return data.publicUrl;
 }
 
@@ -277,10 +277,10 @@ export async function generateAndStoreImage(
 }> {
   // 1. Generate the image
   const generated = await generateImage(options);
-  
+
   // 2. Upload to Supabase
   const uploaded = await uploadGeneratedImage(generated.url, productId);
-  
+
   // 3. Save to assets table
   const title = options.title || `Generated: ${options.prompt.slice(0, 50)}...`;
   const assetId = await saveImageAsset(
@@ -304,3 +304,217 @@ export async function generateAndStoreImage(
   };
 }
 
+// ============================================================================
+// Video Generation
+// ============================================================================
+
+export interface GenerateVideoOptions {
+  prompt: string;
+  firstFrameUrl: string;
+  lastFrameUrl: string;
+  duration?: "4s" | "6s" | "8s"; // VEO 3.1 only supports 4s, 6s, or 8s
+  aspectRatio?: "auto" | "16:9" | "9:16";
+  resolution?: "720p" | "1080p";
+  generateAudio?: boolean;
+}
+
+export interface GeneratedVideo {
+  url: string;
+  requestId: string;
+  contentType?: string;
+}
+
+export interface UploadedVideo {
+  path: string;
+  publicUrl: string;
+  assetId?: string;
+}
+
+/**
+ * Generate a video from first and last frames using FAL AI VEO 3.1 Fast
+ */
+export async function generateVideo(
+  options: GenerateVideoOptions
+): Promise<GeneratedVideo> {
+  const {
+    prompt,
+    firstFrameUrl,
+    lastFrameUrl,
+    duration = "8s",
+    aspectRatio = "auto",
+    resolution = "720p",
+    generateAudio = true,
+  } = options;
+
+  console.log("[MediaGen] Generating video:", { prompt: prompt.slice(0, 50), duration, aspectRatio });
+
+  const modelId = "fal-ai/veo3.1/fast/first-last-frame-to-video";
+
+  try {
+    const result = await fal.subscribe(modelId, {
+      input: {
+        prompt,
+        aspect_ratio: aspectRatio,
+        duration,
+        resolution,
+        generate_audio: generateAudio,
+        first_frame_url: firstFrameUrl,
+        last_frame_url: lastFrameUrl,
+      },
+      logs: true,
+      onQueueUpdate: (update) => {
+        if (update.status === "IN_PROGRESS" && update.logs) {
+          update.logs.map((log) => log.message).forEach((msg) => {
+            console.log("[MediaGen] Video progress:", msg);
+          });
+        }
+      },
+    });
+
+    console.log("[MediaGen] Video generation complete:", result.requestId);
+
+    // Extract video URL from result
+    const video = (result.data as any)?.video;
+    if (!video || !video.url) {
+      throw new Error("No video returned from generation");
+    }
+
+    return {
+      url: video.url,
+      requestId: result.requestId,
+      contentType: video.content_type || "video/mp4",
+    };
+  } catch (error: any) {
+    console.error("[MediaGen] Video generation failed:", error);
+    throw new Error(`Video generation failed: ${error.message}`);
+  }
+}
+
+/**
+ * Upload a generated video to Supabase Storage
+ */
+export async function uploadGeneratedVideo(
+  videoUrl: string,
+  productId: string,
+  filename?: string
+): Promise<UploadedVideo> {
+  console.log("[MediaGen] Uploading video to Supabase:", { productId, videoUrl: videoUrl.slice(0, 50) });
+
+  try {
+    // Download the video from FAL
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch video: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const buffer = Buffer.from(await blob.arrayBuffer());
+
+    // Generate filename if not provided
+    const name = filename || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`;
+    const path = `generated/${productId}/videos/${name}`;
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabaseAdmin.storage
+      .from("assets")
+      .upload(path, buffer, {
+        contentType: "video/mp4",
+        upsert: false,
+      });
+
+    if (error) {
+      throw new Error(`Storage upload failed: ${error.message}`);
+    }
+
+    // Get public URL
+    const { data: urlData } = supabaseAdmin.storage
+      .from("assets")
+      .getPublicUrl(path);
+
+    console.log("[MediaGen] Video upload complete:", urlData.publicUrl);
+
+    return {
+      path: data.path,
+      publicUrl: urlData.publicUrl,
+    };
+  } catch (error: any) {
+    console.error("[MediaGen] Video upload failed:", error);
+    throw new Error(`Video upload failed: ${error.message}`);
+  }
+}
+
+/**
+ * Save video metadata to the assets table
+ */
+export async function saveVideoAsset(
+  productId: string,
+  title: string,
+  videoUrl: string,
+  storagePath: string,
+  metadata?: Record<string, unknown>
+): Promise<string> {
+  const { data, error } = await supabaseAdmin
+    .from("assets")
+    .insert([{
+      product_id: productId,
+      type: "video",
+      title,
+      content: videoUrl,
+      status: "completed",
+      metadata: {
+        storage_path: storagePath,
+        ...metadata,
+      },
+    }])
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[MediaGen] Failed to save video asset:", error);
+    throw new Error(`Failed to save video asset: ${error.message}`);
+  }
+
+  return data.id;
+}
+
+/**
+ * Full video pipeline: Generate → Upload → Save
+ */
+export async function generateAndStoreVideo(
+  productId: string,
+  options: GenerateVideoOptions & { title?: string }
+): Promise<{
+  videoId: string;
+  publicUrl: string;
+  storagePath: string;
+  falUrl: string;
+}> {
+  // 1. Generate the video
+  const generated = await generateVideo(options);
+
+  // 2. Upload to Supabase
+  const uploaded = await uploadGeneratedVideo(generated.url, productId);
+
+  // 3. Save to assets table
+  const title = options.title || `Video: ${options.prompt.slice(0, 40)}...`;
+  const assetId = await saveVideoAsset(
+    productId,
+    title,
+    uploaded.publicUrl,
+    uploaded.path,
+    {
+      prompt: options.prompt,
+      duration: options.duration || "8s",
+      firstFrameUrl: options.firstFrameUrl,
+      lastFrameUrl: options.lastFrameUrl,
+      requestId: generated.requestId,
+    }
+  );
+
+  return {
+    videoId: assetId,
+    publicUrl: uploaded.publicUrl,
+    storagePath: uploaded.path,
+    falUrl: generated.url,
+  };
+}

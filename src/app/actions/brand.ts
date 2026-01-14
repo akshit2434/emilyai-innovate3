@@ -44,7 +44,7 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
   (async () => {
     const startTime = Date.now();
     let chunkCount = 0;
-    
+
     try {
       if (DEBUG) {
         console.log("\n=== BRAND AGENT DEBUG ===");
@@ -55,9 +55,9 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
 
       // Filter out empty messages that would cause Gemini errors
       const validMessages = messages.filter(m => m.content && m.content.trim().length > 0);
-      
+
       if (DEBUG) console.log(`Valid messages after filter: ${validMessages.length}`);
-      
+
       if (validMessages.length === 0) {
         stream.update({ content: "I didn't receive a message. How can I help you?" });
         stream.done();
@@ -71,10 +71,10 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
       });
 
       if (DEBUG) console.log(`[${Date.now() - startTime}ms] Calling brandAgent.stream()...`);
-      
+
       // Emit early update to prevent "slow to update" warning
       stream.update({ status: "thinking" });
-      
+
       const resultStream = await brandAgent.stream({
         messages: langChainMessages,
         product: productContext,
@@ -84,34 +84,34 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
 
       for await (const chunk of resultStream) {
         chunkCount++;
-        
+
         if (DEBUG) {
           console.log(`\n[Chunk ${chunkCount}] at ${Date.now() - startTime}ms`);
           console.log("  Keys:", Object.keys(chunk));
         }
-        
+
         if (chunk.agent?.messages) {
           const lastMsg = chunk.agent.messages[chunk.agent.messages.length - 1] as AIMessage;
-          
+
           if (DEBUG) {
             console.log("  Agent message type:", lastMsg.constructor.name);
             console.log("  Has tool_calls:", lastMsg.tool_calls?.length || 0);
             console.log("  Content preview:", typeof lastMsg.content === 'string' ? lastMsg.content.slice(0, 80) + "..." : "[non-string]");
           }
-          
+
           // Emit tool call when AI invokes tools
           if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
             for (const toolCall of lastMsg.tool_calls) {
               if (DEBUG) console.log(`  Tool call: ${toolCall.name}`);
-              stream.update({ 
-                toolCall: { 
-                  name: toolCall.name, 
-                  status: "processing" 
-                } 
+              stream.update({
+                toolCall: {
+                  name: toolCall.name,
+                  status: "processing"
+                }
               });
             }
           }
-          
+
           if (lastMsg.content && (!lastMsg.tool_calls || lastMsg.tool_calls.length === 0)) {
             const content = typeof lastMsg.content === 'string' ? lastMsg.content : "";
             if (content) {
@@ -119,7 +119,7 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
             }
           }
         }
-        
+
         if (chunk.tools?.messages) {
           const toolMsg = chunk.tools.messages[chunk.tools.messages.length - 1];
           if (DEBUG) {
@@ -129,7 +129,7 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
           if (toolMsg.content) {
             try {
               const result = JSON.parse(toolMsg.content as string);
-              
+
               // Extract internal fields for UI rendering (URLs, IDs)
               // These should NOT be sent back to the AI model
               const uiResult = { ...result };
@@ -140,13 +140,13 @@ export async function chatWithBrandAgent(productId: string, messages: { role: st
                 // Remove _internal from what we store/show
                 delete uiResult._internal;
               }
-              
+
               // Emit tool result with tool name for status update
-              stream.update({ 
+              stream.update({
                 toolResult: uiResult,
-                toolCall: { 
-                  name: toolMsg.name || "unknown", 
-                  status: result.error ? "failed" : "done" 
+                toolCall: {
+                  name: toolMsg.name || "unknown",
+                  status: result.error ? "failed" : "done"
                 }
               });
             } catch (e) {
@@ -327,12 +327,12 @@ export async function saveAsset(
 // Video Workflow Actions
 // ============================================================================
 
-import { 
+import {
   videoAgent,
   createInitialStoryline,
   createInitialStoryboard,
   createNewVideoWorkflow,
-  VideoWorkflowState 
+  VideoWorkflowState
 } from "@/lib/videoAgent";
 
 // Start a new video workflow - creates initial storyline
@@ -351,7 +351,7 @@ export async function initiateVideoWorkflow(
   const workflow = createNewVideoWorkflow(productContext, userRequest);
   const storyline = await createInitialStoryline(productContext, userRequest);
   workflow.storyline = storyline;
-  
+
   return workflow;
 }
 
@@ -403,7 +403,7 @@ export async function chatWithVideoAgent(
         // Stream agent messages
         if (chunk.agent?.messages) {
           const agentMsg = chunk.agent.messages[chunk.agent.messages.length - 1];
-          
+
           if (DEBUG) {
             console.log("  Agent msg type:", agentMsg.constructor.name);
             console.log("  Has content:", !!agentMsg.content);
@@ -416,12 +416,12 @@ export async function chatWithVideoAgent(
             accumulatedText += agentMsg.content;
             stream.update({ text: agentMsg.content, done: false });
           }
-          
+
           // Also show tool call status
           if (agentMsg.tool_calls && agentMsg.tool_calls.length > 0) {
             for (const tc of agentMsg.tool_calls) {
               if (DEBUG) console.log("  Tool call:", tc.name);
-              stream.update({ 
+              stream.update({
                 toolCall: { name: tc.name, status: "processing" }
               });
             }
@@ -438,12 +438,12 @@ export async function chatWithVideoAgent(
           if (toolMsg.content) {
             try {
               const result = JSON.parse(toolMsg.content as string);
-              
+
               // Apply workflow updates based on tool result
               if (result.type === "workflow_update") {
                 const prevStage = updatedWorkflow.stage;
                 updatedWorkflow = applyWorkflowUpdate(updatedWorkflow, result);
-                
+
                 // Generate storyboard when transitioning from storyline to storyboard
                 if (prevStage === "storyline" && updatedWorkflow.stage === "storyboard" && !updatedWorkflow.storyboard) {
                   console.log("[VIDEO AGENT] Generating storyboard on stage transition...");
@@ -454,15 +454,15 @@ export async function chatWithVideoAgent(
                   updatedWorkflow.storyboard = storyboard;
                   console.log("[VIDEO AGENT] Storyboard generated with", storyboard.clips.length, "clips");
                 }
-                
+
                 // Use the tool's message as AI response if no text was accumulated
                 if (result.message && !accumulatedText) {
                   accumulatedText = result.message;
                   stream.update({ text: result.message, done: false });
                 }
               }
-              
-              stream.update({ 
+
+              stream.update({
                 toolResult: result,
                 toolCall: { name: toolMsg.name || "unknown", status: "done" },
                 workflow: updatedWorkflow,
@@ -497,14 +497,14 @@ function applyWorkflowUpdate(
   toolResult: any
 ): VideoWorkflowState {
   const updated = { ...workflow };
-  
+
   switch (toolResult.action) {
     case "update_storyline":
       if (updated.storyline) {
         updated.storyline = { ...updated.storyline, ...toolResult.updates };
       }
       break;
-      
+
     case "update_clip":
       if (updated.storyboard) {
         const clipIdx = toolResult.clipIndex - 1;
@@ -512,8 +512,8 @@ function applyWorkflowUpdate(
           updated.storyboard.clips[clipIdx] = {
             ...updated.storyboard.clips[clipIdx],
             ...toolResult.updates,
-            duration: toolResult.updates.duration 
-              ? parseInt(toolResult.updates.duration) 
+            duration: toolResult.updates.duration
+              ? parseInt(toolResult.updates.duration)
               : updated.storyboard.clips[clipIdx].duration,
           };
           // Recalculate total duration
@@ -523,7 +523,7 @@ function applyWorkflowUpdate(
         }
       }
       break;
-      
+
     case "add_clip":
       if (updated.storyboard) {
         const newClip = {
@@ -541,7 +541,7 @@ function applyWorkflowUpdate(
         );
       }
       break;
-      
+
     case "remove_clip":
       if (updated.storyboard) {
         updated.storyboard.clips = updated.storyboard.clips.filter(
@@ -553,7 +553,7 @@ function applyWorkflowUpdate(
         );
       }
       break;
-      
+
     case "proceed":
       console.log("[WORKFLOW] Proceed from:", updated.stage);
       if (updated.stage === "storyline") {
@@ -581,7 +581,7 @@ function applyWorkflowUpdate(
       }
       console.log("[WORKFLOW] Proceed to:", updated.stage);
       break;
-      
+
     case "go_back":
       if (updated.stage === "storyboard") {
         updated.stage = "storyline";
@@ -589,14 +589,14 @@ function applyWorkflowUpdate(
         updated.stage = "storyboard";
       }
       break;
-      
+
     case "cancel":
       updated.stage = "cancelled";
       break;
-      
+
     // Note: "finalize" action removed - generation happens via triggerFrameGeneration
   }
-  
+
   return updated;
 }
 
@@ -618,7 +618,7 @@ export async function generateStoryboardForWorkflow(
     workflow.productContext,
     workflow.storyline
   );
-  
+
   return {
     ...workflow,
     storyboard,
@@ -626,9 +626,11 @@ export async function generateStoryboardForWorkflow(
   };
 }
 
-// Generate frames for workflow (mock implementation)
+// Generate frames for workflow using FAL AI
 export async function generateFramesForWorkflow(
-  workflow: VideoWorkflowState
+  workflow: VideoWorkflowState,
+  framePrompts?: Map<string, { firstFramePrompt: string; lastFramePrompt: string; referenceImageIds?: string[]; useComplexModel?: boolean }>,
+  availableImages?: Map<string, { id: string; url: string; description: string; source: string }>
 ) {
   const { userId } = await auth();
 
@@ -647,7 +649,7 @@ export async function generateFramesForWorkflow(
       }
 
       const { runVideoGenerationPipeline } = await import("@/lib/videoGeneration");
-      
+
       const clips = workflow.storyboard.clips.map(c => ({
         id: c.id,
         description: c.description,
@@ -655,6 +657,11 @@ export async function generateFramesForWorkflow(
       }));
 
       console.log("[VIDEO GEN] Running pipeline with", clips.length, "clips");
+
+      // Build available images map from workflow state if not provided
+      const imagesMap = availableImages || new Map(
+        workflow.availableImages?.map(img => [img.id, img]) || []
+      );
 
       const updatedWorkflow = { ...workflow };
       updatedWorkflow.stage = "generating";
@@ -670,12 +677,16 @@ export async function generateFramesForWorkflow(
         status: "pending" as const,
       }));
 
-      for await (const progress of runVideoGenerationPipeline(clips)) {
+      // Run pipeline with options
+      for await (const progress of runVideoGenerationPipeline(clips, {
+        framePrompts,
+        availableImages: imagesMap,
+      })) {
         console.log("[VIDEO GEN]", progress.phase, "-", progress.message);
-        
+
         // Update workflow state based on progress
         updatedWorkflow.generationPhase = progress.phase === "complete" ? "done" : progress.phase;
-        
+
         if (progress.frames) {
           updatedWorkflow.generatedFrames = progress.frames.map(f => ({
             clipId: f.clipId,
@@ -684,7 +695,7 @@ export async function generateFramesForWorkflow(
             status: f.status as "pending" | "generating" | "done",
           }));
         }
-        
+
         if (progress.clips) {
           updatedWorkflow.generatedClips = progress.clips.map(c => ({
             clipId: c.clipId,
@@ -692,7 +703,7 @@ export async function generateFramesForWorkflow(
             status: "done" as const,
           }));
         }
-        
+
         if (progress.finalVideo) {
           updatedWorkflow.stage = "complete";
           updatedWorkflow.generationPhase = "done";
@@ -704,6 +715,8 @@ export async function generateFramesForWorkflow(
           phase: progress.phase,
           message: progress.message,
           complete: progress.phase === "complete",
+          // Include individual clip URLs so UI can show them
+          clipUrls: progress.finalVideo?.clipUrls || progress.clips?.map(c => c.url) || [],
         });
       }
 
@@ -716,4 +729,3 @@ export async function generateFramesForWorkflow(
 
   return stream.value;
 }
-

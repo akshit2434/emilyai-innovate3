@@ -1,5 +1,15 @@
-// Mock Video Generation Functions
-// These simulate real video generation APIs with configurable delays
+/**
+ * Video Generation Pipeline
+ * Uses FAL AI for real frame and clip generation
+ * Stitching remains mocked (requires FFmpeg for production)
+ */
+
+import { generateImage, generateVideo, uploadGeneratedImage, uploadGeneratedVideo } from "./mediaGeneration";
+import { ImageReference } from "./frameGeneration";
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface GeneratedFrame {
   id: string;
@@ -19,106 +29,16 @@ export interface StitchedVideo {
   id: string;
   url: string;
   totalDuration: number;
+  clipUrls: string[]; // Individual clip URLs for viewing
 }
 
-// Configuration for mock delays (in ms)
-const MOCK_DELAYS = {
-  frameGeneration: { min: 800, max: 1500 },
-  clipGeneration: { min: 1500, max: 2500 },
-  videoStitching: { min: 2000, max: 3500 },
-};
-
-function randomDelay(config: { min: number; max: number }): number {
-  return config.min + Math.random() * (config.max - config.min);
+export interface ClipFramePrompts {
+  firstFramePrompt: string;
+  lastFramePrompt: string;
+  referenceImageIds?: string[];
+  useComplexModel?: boolean;
 }
 
-/**
- * Generate a mock frame image (first or last keyframe for a clip)
- * In production, this would call an image generation API like Flux or DALL-E
- */
-export async function generateMockFrame(
-  clipId: string,
-  clipDescription: string,
-  frameType: "start" | "end"
-): Promise<GeneratedFrame> {
-  console.log(`[MOCK] Generating ${frameType} frame for clip ${clipId}...`);
-  
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, randomDelay(MOCK_DELAYS.frameGeneration)));
-  
-  // Generate a mock URL using picsum with a deterministic seed
-  const seed = `${clipId}-${frameType}-${Date.now()}`;
-  const url = `https://picsum.photos/seed/${encodeURIComponent(seed)}/1280/720`;
-  
-  console.log(`[MOCK] Frame generated: ${frameType} for ${clipId}`);
-  
-  return {
-    id: `frame_${Date.now()}_${frameType}`,
-    url,
-    clipId,
-    frameType,
-  };
-}
-
-/**
- * Generate a mock video clip from start and end frames
- * In production, this would call a video generation API like Runway, Kling, etc.
- */
-export async function generateMockClip(
-  clipId: string,
-  startFrameUrl: string,
-  endFrameUrl: string,
-  durationSeconds: number
-): Promise<GeneratedClip> {
-  console.log(`[MOCK] Generating video clip ${clipId} (${durationSeconds}s)...`);
-  
-  // Simulate API delay (longer for video generation)
-  await new Promise(resolve => setTimeout(resolve, randomDelay(MOCK_DELAYS.clipGeneration)));
-  
-  // Mock video URL - in production this would be a real video file
-  // Using a placeholder video service
-  const mockVideoUrl = `https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
-  
-  console.log(`[MOCK] Clip generated: ${clipId}`);
-  
-  return {
-    id: `clip_video_${Date.now()}`,
-    url: mockVideoUrl,
-    clipId,
-    duration: durationSeconds,
-  };
-}
-
-/**
- * Stitch multiple video clips into a final video
- * In production, this would use FFmpeg or a video processing API
- */
-export async function stitchMockVideo(
-  clips: GeneratedClip[]
-): Promise<StitchedVideo> {
-  console.log(`[MOCK] Stitching ${clips.length} clips into final video...`);
-  
-  // Simulate processing delay
-  await new Promise(resolve => setTimeout(resolve, randomDelay(MOCK_DELAYS.videoStitching)));
-  
-  const totalDuration = clips.reduce((sum, clip) => sum + clip.duration, 0);
-  
-  // Mock final video URL
-  const mockFinalUrl = `https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`;
-  
-  console.log(`[MOCK] Final video stitched: ${totalDuration}s total`);
-  
-  return {
-    id: `video_final_${Date.now()}`,
-    url: mockFinalUrl,
-    totalDuration,
-  };
-}
-
-/**
- * Run the complete video generation pipeline for a storyboard
- * Streams progress updates via callback
- */
 export interface GenerationProgress {
   phase: "frames" | "clips" | "stitching" | "complete";
   clipIndex?: number;
@@ -130,19 +50,190 @@ export interface GenerationProgress {
   finalVideo?: StitchedVideo;
 }
 
+// ============================================================================
+// Frame Generation (Real FAL AI)
+// ============================================================================
+
+/**
+ * Generate a frame image using FAL AI
+ */
+export async function generateRealFrame(
+  clipId: string,
+  clipDescription: string,
+  frameType: "start" | "end",
+  options?: {
+    prompt?: string;
+    complex?: boolean;
+    referenceImages?: ImageReference[];
+    aspectRatio?: string;
+  }
+): Promise<GeneratedFrame> {
+  console.log(`[VideoGen] Generating ${frameType} frame for clip ${clipId}...`);
+
+  const frameContext = frameType === "start"
+    ? "opening scene establishing shot"
+    : "closing scene final shot";
+
+  // Build prompt - use custom prompt if provided, otherwise generate from description
+  const basePrompt = options?.prompt || clipDescription;
+  const enhancedPrompt = `[Frame Type]: ${frameContext}
+[Scene Description]: ${basePrompt}
+
+[Requirements]:
+- Cinematic quality, professional advertising aesthetic
+- 16:9 aspect ratio for video frame
+- Clear, sharp imagery suitable for video keyframe
+- Consistent lighting and color grading`;
+
+  // Get reference image URLs in order
+  const imageRefs = options?.referenceImages?.map(ref => ref.url);
+
+  try {
+    const result = await generateImage({
+      prompt: enhancedPrompt,
+      complex: options?.complex ?? false,
+      imageRefs: imageRefs && imageRefs.length > 0 ? imageRefs : undefined,
+      aspectRatio: options?.aspectRatio || "16:9",
+      resolution: "2K",
+      numImages: 1,
+    });
+
+    console.log(`[VideoGen] Frame generated: ${frameType} for ${clipId}`);
+
+    return {
+      id: `frame_${Date.now()}_${frameType}`,
+      url: result.url,
+      clipId,
+      frameType,
+    };
+  } catch (error: any) {
+    console.error(`[VideoGen] Frame generation failed for ${clipId}:`, error);
+    throw new Error(`Frame generation failed: ${error.message}`);
+  }
+}
+
+/**
+ * Generate a video clip from start and end frames using FAL AI VEO 3.1
+ */
+export async function generateRealClip(
+  clipId: string,
+  clipDescription: string,
+  startFrameUrl: string,
+  endFrameUrl: string,
+  durationSeconds: number
+): Promise<GeneratedClip> {
+  console.log(`[VideoGen] Generating video clip ${clipId} (${durationSeconds}s)...`);
+
+  // Map duration to VEO 3.1 supported durations
+  const veoDuration = mapToVeoDuration(durationSeconds);
+
+  try {
+    const result = await generateVideo({
+      prompt: clipDescription,
+      firstFrameUrl: startFrameUrl,
+      lastFrameUrl: endFrameUrl,
+      duration: veoDuration,
+      aspectRatio: "16:9",
+      resolution: "720p",
+      generateAudio: true,
+    });
+
+    console.log(`[VideoGen] Clip generated: ${clipId}`);
+
+    return {
+      id: `clip_video_${Date.now()}`,
+      url: result.url,
+      clipId,
+      duration: durationSeconds,
+    };
+  } catch (error: any) {
+    console.error(`[VideoGen] Clip generation failed for ${clipId}:`, error);
+    throw new Error(`Clip generation failed: ${error.message}`);
+  }
+}
+
+/**
+ * Map storyboard duration to VEO 3.1 supported durations
+ * VEO 3.1 only accepts 4s, 6s, or 8s
+ */
+function mapToVeoDuration(seconds: number): "4s" | "6s" | "8s" {
+  if (seconds <= 4) return "4s";
+  if (seconds <= 6) return "6s";
+  return "8s";
+}
+
+/**
+ * Stitch multiple video clips into a final video
+ * MOCKED - Returns the clips as-is since FFmpeg isn't available on Vercel
+ * Users can view individual clips while final stitching is mocked
+ */
+export async function stitchMockVideo(
+  clips: GeneratedClip[]
+): Promise<StitchedVideo> {
+  console.log(`[VideoGen] Stitching ${clips.length} clips (mocked - displaying clips separately)...`);
+
+  // Simulate a brief processing delay
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const totalDuration = clips.reduce((sum, clip) => sum + clip.duration, 0);
+  const clipUrls = clips.map(c => c.url);
+
+  // For now, use the first clip as the "final" video
+  // In production, this would be FFmpeg-stitched
+  const mockFinalUrl = clips.length > 0
+    ? clips[0].url
+    : "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+
+  console.log(`[VideoGen] Stitching complete (mocked): ${totalDuration}s total, ${clips.length} clips available`);
+
+  return {
+    id: `video_final_${Date.now()}`,
+    url: mockFinalUrl,
+    totalDuration,
+    clipUrls, // Individual clips are viewable
+  };
+}
+
+// ============================================================================
+// Video Generation Pipeline
+// ============================================================================
+
+export interface PipelineOptions {
+  productId?: string;
+  framePrompts?: Map<string, ClipFramePrompts>;
+  availableImages?: Map<string, ImageReference>;
+}
+
+/**
+ * Run the complete video generation pipeline for a storyboard
+ * Uses real FAL AI for frame and clip generation
+ * Streams progress updates via async generator
+ */
 export async function* runVideoGenerationPipeline(
-  storyboardClips: Array<{ id: string; description: string; duration: number }>
+  storyboardClips: Array<{ id: string; description: string; duration: number }>,
+  options?: PipelineOptions
 ): AsyncGenerator<GenerationProgress> {
   const totalClips = storyboardClips.length;
-  const generatedFrames: Array<{ clipId: string; startUrl: string | null; endUrl: string | null; status: string }> = 
+  const generatedFrames: Array<{ clipId: string; startUrl: string | null; endUrl: string | null; status: string }> =
     storyboardClips.map(c => ({ clipId: c.id, startUrl: null, endUrl: null, status: "pending" }));
   const generatedClips: GeneratedClip[] = [];
 
-  // Phase 1: Generate all frames
+  // Phase 1: Generate all frames using FAL AI
   for (let i = 0; i < totalClips; i++) {
     const clip = storyboardClips[i];
     generatedFrames[i].status = "generating";
-    
+
+    // Get custom prompts if available
+    const customPrompts = options?.framePrompts?.get(clip.id);
+
+    // Resolve reference images if specified
+    let referenceImages: ImageReference[] | undefined;
+    if (customPrompts?.referenceImageIds && options?.availableImages) {
+      referenceImages = customPrompts.referenceImageIds
+        .map(id => options.availableImages!.get(id))
+        .filter((img): img is ImageReference => img !== undefined);
+    }
+
     // Generate start frame
     yield {
       phase: "frames",
@@ -152,10 +243,15 @@ export async function* runVideoGenerationPipeline(
       message: `Generating start frame for clip ${i + 1}/${totalClips}...`,
       frames: [...generatedFrames],
     };
-    
-    const startFrame = await generateMockFrame(clip.id, clip.description, "start");
+
+    const startFrame = await generateRealFrame(clip.id, clip.description, "start", {
+      prompt: customPrompts?.firstFramePrompt,
+      complex: customPrompts?.useComplexModel,
+      referenceImages,
+      aspectRatio: "16:9",
+    });
     generatedFrames[i].startUrl = startFrame.url;
-    
+
     // Generate end frame
     yield {
       phase: "frames",
@@ -165,11 +261,16 @@ export async function* runVideoGenerationPipeline(
       message: `Generating end frame for clip ${i + 1}/${totalClips}...`,
       frames: [...generatedFrames],
     };
-    
-    const endFrame = await generateMockFrame(clip.id, clip.description, "end");
+
+    const endFrame = await generateRealFrame(clip.id, clip.description, "end", {
+      prompt: customPrompts?.lastFramePrompt,
+      complex: customPrompts?.useComplexModel,
+      referenceImages,
+      aspectRatio: "16:9",
+    });
     generatedFrames[i].endUrl = endFrame.url;
     generatedFrames[i].status = "done";
-    
+
     yield {
       phase: "frames",
       clipIndex: i,
@@ -179,11 +280,11 @@ export async function* runVideoGenerationPipeline(
     };
   }
 
-  // Phase 2: Generate video clips from frames
+  // Phase 2: Generate video clips from frames using VEO 3.1
   for (let i = 0; i < totalClips; i++) {
     const clip = storyboardClips[i];
     const frame = generatedFrames[i];
-    
+
     yield {
       phase: "clips",
       clipIndex: i,
@@ -192,15 +293,16 @@ export async function* runVideoGenerationPipeline(
       frames: generatedFrames,
       clips: [...generatedClips],
     };
-    
-    const generatedClip = await generateMockClip(
+
+    const generatedClip = await generateRealClip(
       clip.id,
+      clip.description,
       frame.startUrl!,
       frame.endUrl!,
       clip.duration
     );
     generatedClips.push(generatedClip);
-    
+
     yield {
       phase: "clips",
       clipIndex: i,
@@ -211,19 +313,19 @@ export async function* runVideoGenerationPipeline(
     };
   }
 
-  // Phase 3: Stitch all clips
+  // Phase 3: Stitch all clips (mocked)
   yield {
     phase: "stitching",
-    message: "Stitching all clips into final video...",
+    message: "Preparing final video (clips available for preview)...",
     frames: generatedFrames,
     clips: generatedClips,
   };
-  
+
   const finalVideo = await stitchMockVideo(generatedClips);
-  
+
   yield {
     phase: "complete",
-    message: "Video generation complete!",
+    message: "Video generation complete! Individual clips are ready to view.",
     frames: generatedFrames,
     clips: generatedClips,
     finalVideo,
