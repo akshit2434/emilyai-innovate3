@@ -120,9 +120,10 @@ export async function generateRealClip(
   clipDescription: string,
   startFrameUrl: string,
   endFrameUrl: string,
-  durationSeconds: number
+  durationSeconds: number,
+  aspectRatio: "9:16" | "16:9" = "9:16"
 ): Promise<GeneratedClip> {
-  console.log(`[VideoGen] Generating video clip ${clipId} (${durationSeconds}s)...`);
+  console.log(`[VideoGen] Generating video clip ${clipId} (${durationSeconds}s, ${aspectRatio})...`);
 
   // Map duration to VEO 3.1 supported durations
   const veoDuration = mapToVeoDuration(durationSeconds);
@@ -133,7 +134,7 @@ export async function generateRealClip(
       firstFrameUrl: startFrameUrl,
       lastFrameUrl: endFrameUrl,
       duration: veoDuration,
-      aspectRatio: "16:9",
+      aspectRatio: aspectRatio,
       resolution: "720p",
       generateAudio: true,
     });
@@ -202,6 +203,8 @@ export interface PipelineOptions {
   productId?: string;
   framePrompts?: Map<string, ClipFramePrompts>;
   availableImages?: Map<string, ImageReference>;
+  /** Aspect ratio for video generation (default: "9:16" for vertical) */
+  aspectRatio?: "9:16" | "16:9";
 }
 
 /**
@@ -248,7 +251,7 @@ export async function* runVideoGenerationPipeline(
       prompt: customPrompts?.firstFramePrompt,
       complex: customPrompts?.useComplexModel,
       referenceImages,
-      aspectRatio: "16:9",
+      aspectRatio: options?.aspectRatio || "9:16",
     });
     generatedFrames[i].startUrl = startFrame.url;
 
@@ -266,7 +269,7 @@ export async function* runVideoGenerationPipeline(
       prompt: customPrompts?.lastFramePrompt,
       complex: customPrompts?.useComplexModel,
       referenceImages,
-      aspectRatio: "16:9",
+      aspectRatio: options?.aspectRatio || "9:16",
     });
     generatedFrames[i].endUrl = endFrame.url;
     generatedFrames[i].status = "done";
@@ -299,7 +302,8 @@ export async function* runVideoGenerationPipeline(
       clip.description,
       frame.startUrl!,
       frame.endUrl!,
-      clip.duration
+      clip.duration,
+      options?.aspectRatio || "9:16"
     );
     generatedClips.push(generatedClip);
 

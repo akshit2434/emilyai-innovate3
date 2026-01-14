@@ -37,13 +37,13 @@ const getStageInfo = (stage: string, generationPhase?: string) => {
     generating: {
       title: "Generating",
       step: 3,
-      description: generationPhase === "frames" 
-        ? "Creating keyframes..." 
+      description: generationPhase === "frames"
+        ? "Creating keyframes..."
         : generationPhase === "clips"
-        ? "Animating video clips..."
-        : generationPhase === "stitching"
-        ? "Stitching final video..."
-        : "Creating video...",
+          ? "Animating video clips..."
+          : generationPhase === "stitching"
+            ? "Stitching final video..."
+            : "Creating video...",
     },
     complete: {
       title: "Complete",
@@ -155,25 +155,25 @@ export function VideoSubgraphView({
                 </div>
               </motion.div>
             )}
-            {(workflow.stage === "storyboard" || workflow.stage === "generating" || workflow.stage === "complete") && 
-             workflow.storyboard && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-start gap-3"
-              >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                  E
-                </div>
-                <div className="flex-1">
-                  <StoryboardDisplay 
-                    storyboard={workflow.storyboard} 
-                    generatedFrames={workflow.generatedFrames}
-                    isGenerating={workflow.stage === "generating"}
-                  />
-                </div>
-              </motion.div>
-            )}
+            {(workflow.stage === "storyboard" || workflow.stage === "generating" || workflow.stage === "complete") &&
+              workflow.storyboard && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-start gap-3"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                    E
+                  </div>
+                  <div className="flex-1">
+                    <StoryboardDisplay
+                      storyboard={workflow.storyboard}
+                      generatedFrames={workflow.generatedFrames}
+                      isGenerating={workflow.stage === "generating"}
+                    />
+                  </div>
+                </motion.div>
+              )}
 
             {/* User/AI Chat Messages */}
             {messages.map((msg, i) => (
@@ -192,18 +192,18 @@ export function VideoSubgraphView({
                       E
                     </div>
                     <div className="flex-1">
-                      <CinematicMessage 
-                        content={msg.content} 
-                        isAssistant={true} 
+                      <CinematicMessage
+                        content={msg.content}
+                        isAssistant={true}
                         isLoaded={true}
                         isVideoMode={true}
                       />
                     </div>
                   </div>
                 ) : (
-                  <CinematicMessage 
-                    content={msg.content} 
-                    isAssistant={false} 
+                  <CinematicMessage
+                    content={msg.content}
+                    isAssistant={false}
                     isLoaded={true}
                     isVideoMode={true}
                   />
@@ -222,9 +222,9 @@ export function VideoSubgraphView({
                   <Loader2 size={14} className="text-white animate-spin" />
                 </div>
                 <div className="flex-1">
-                  <CinematicMessage 
-                    content={streamingText || "Thinking..."} 
-                    isAssistant={true} 
+                  <CinematicMessage
+                    content={streamingText || "Thinking..."}
+                    isAssistant={true}
                     isLoaded={false}
                     isVideoMode={true}
                   />
@@ -248,6 +248,7 @@ export function VideoSubgraphView({
                     generatedFrames={workflow.generatedFrames || []}
                     generatedClips={workflow.generatedClips || []}
                     videoUrl={workflow.videoUrl}
+                    aspectRatio={workflow.aspectRatio || workflow.storyline?.aspectRatio || "9:16"}
                   />
                 </div>
               </motion.div>
@@ -276,10 +277,10 @@ export function VideoSubgraphView({
                 workflow.stage === "storyline"
                   ? "Give feedback or say 'continue' to proceed..."
                   : workflow.stage === "storyboard"
-                  ? "Edit clips or say 'looks good' to generate..."
-                  : workflow.stage === "generating"
-                  ? "Generating frames... You can still chat!"
-                  : "Your video is ready!"
+                    ? "Edit clips or say 'looks good' to generate..."
+                    : workflow.stage === "generating"
+                      ? "Generating frames... You can still chat!"
+                      : "Your video is ready!"
               }
               disabled={isLoading}
               rows={1}
@@ -394,7 +395,7 @@ function StoryboardDisplay({ storyboard, generatedFrames, isGenerating }: Storyb
           {storyboard.clips.length} clips · {storyboard.totalDuration}s total
         </span>
       </div>
-      
+
       <div className="space-y-2">
         {storyboard.clips.map((clip) => {
           const frameData = generatedFrames.find((f) => f.clipId === clip.id);
@@ -409,8 +410,8 @@ function StoryboardDisplay({ storyboard, generatedFrames, isGenerating }: Storyb
                 isClipDone
                   ? "bg-green-50/50 border-green-200"
                   : isClipGenerating
-                  ? "bg-orange-50/50 border-orange-200"
-                  : "bg-orange-50/30 border-orange-100"
+                    ? "bg-orange-50/50 border-orange-200"
+                    : "bg-orange-50/30 border-orange-100"
               )}
             >
               {/* Clip Number */}

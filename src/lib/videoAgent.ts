@@ -26,6 +26,7 @@ export interface VideoStoryline {
   narrative: string;
   estimatedDuration: number;
   targetPlatform: "instagram" | "tiktok" | "youtube_shorts";
+  aspectRatio: "9:16" | "16:9"; // Vertical for TikTok/Reels, Landscape for YouTube
 }
 
 export interface VideoStoryboard {
@@ -70,6 +71,8 @@ export interface VideoWorkflowState {
   messages: Array<{ role: string; content: string }>;
   // Available images for reference during frame generation
   availableImages: AvailableImage[];
+  // Aspect ratio for the video (derived from storyline)
+  aspectRatio?: "9:16" | "16:9";
 }
 
 // ============================================================================
@@ -438,8 +441,14 @@ Return JSON only:
   "hook": "attention-grabbing first 3 seconds",
   "narrative": "2-3 sentence arc",
   "estimatedDuration": 40,
-  "targetPlatform": "tiktok"
-}`;
+  "targetPlatform": "tiktok",
+  "aspectRatio": "9:16"
+}
+
+IMPORTANT: Set aspectRatio based on platform:
+- instagram, tiktok → "9:16" (vertical)
+- youtube_shorts → "9:16" (vertical)
+- For landscape YouTube content → "16:9"`;
 
   const response = await storyLlm.invoke([
     new SystemMessage(systemPrompt),
@@ -456,6 +465,7 @@ Return JSON only:
       narrative: "A journey through the brand experience",
       estimatedDuration: 40,
       targetPlatform: "tiktok",
+      aspectRatio: "9:16",
     };
   }
 }

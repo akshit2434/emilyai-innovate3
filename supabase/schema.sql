@@ -69,3 +69,69 @@ CREATE POLICY "Users can manage own assets" ON assets FOR ALL USING (true);
 -- Note: The above RLS policies are permissive for development.
 -- In production, you should tighten these based on your auth setup.
 -- For Clerk, you may need to use a custom function to verify user_id matches the JWT claim.
+
+-- ============================================================================
+-- Video Workflow Tables (for persistence across page refreshes)
+-- ============================================================================
+
+-- Video Workflows table - stores the main workflow state
+CREATE TABLE IF NOT EXISTS video_workflows (
+  id TEXT PRIMARY KEY,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL DEFAULT 'storyline' CHECK (stage IN ('storyline', 'storyboard', 'generating', 'complete', 'cancelled')),
+  generation_phase TEXT CHECK (generation_phase IN ('frames', 'clips', 'stitching', 'done')),
+  user_request TEXT,
+  storyline JSONB,
+  storyboard JSONB,
+  video_url TEXT,
+  aspect_ratio TEXT DEFAULT '9:16' CHECK (aspect_ratio IN ('9:16', '16:9')),
+  available_images JSONB DEFAULT '[]',
+  messages JSONB DEFAULT '[]',
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Video Frames table - stores generated frames for each clip
+CREATE TABLE IF NOT EXISTS video_frames (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_id TEXT REFERENCES video_workflows(id) ON DELETE CASCADE,
+  clip_id TEXT NOT NULL,
+  frame_type TEXT NOT NULL CHECK (frame_type IN ('start', 'end')),
+  url TEXT NOT NULL,
+  storage_path TEXT,
+  status TEXT DEFAULT 'done' CHECK (status IN ('pending', 'generating', 'done', 'failed')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Video Clips table - stores generated video clips
+CREATE TABLE IF NOT EXISTS video_clips (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_id TEXT REFERENCES video_workflows(id) ON DELETE CASCADE,
+  clip_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  storage_path TEXT,
+  duration INTEGER,
+  status TEXT DEFAULT 'done' CHECK (status IN ('pending', 'generating', 'done', 'failed')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for video workflow tables
+CREATE INDEX IF NOT EXISTS idx_video_workflows_product_id ON video_workflows(product_id);
+CREATE INDEX IF NOT EXISTS idx_video_frames_workflow_id ON video_frames(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_video_clips_workflow_id ON video_clips(workflow_id);
+
+-- Enable RLS on video workflow tables
+ALTER TABLE video_workflows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_frames ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_clips ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for video workflow tables (permissive for development)
+DROP POLICY IF EXISTS "Users can manage video workflows" ON video_workflows;
+CREATE POLICY "Users can manage video workflows" ON video_workflows FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Users can manage video frames" ON video_frames;
+CREATE POLICY "Users can manage video frames" ON video_frames FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Users can manage video clips" ON video_clips;
+CREATE POLICY "Users can manage video clips" ON video_clips FOR ALL USING (true);

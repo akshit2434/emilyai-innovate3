@@ -351,8 +351,37 @@ export async function initiateVideoWorkflow(
   const workflow = createNewVideoWorkflow(productContext, userRequest);
   const storyline = await createInitialStoryline(productContext, userRequest);
   workflow.storyline = storyline;
+  workflow.aspectRatio = storyline.aspectRatio;
+
+  // Save to DB for persistence
+  try {
+    const { saveVideoWorkflow } = await import("@/lib/videoWorkflowDb");
+    await saveVideoWorkflow(workflow, productId);
+  } catch (e) {
+    console.warn("[VIDEO] Failed to save initial workflow:", e);
+  }
 
   return workflow;
+}
+
+// Load active video workflow for a product (for page refresh persistence)
+export async function loadActiveVideoWorkflow(
+  productId: string
+): Promise<VideoWorkflowState | null> {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return null;
+  }
+
+  try {
+    const { loadActiveVideoWorkflowByProduct } = await import("@/lib/videoWorkflowDb");
+    const workflow = await loadActiveVideoWorkflowByProduct(productId);
+    return workflow;
+  } catch (e) {
+    console.warn("[VIDEO] Failed to load active workflow:", e);
+    return null;
+  }
 }
 
 // Chat with video agent - for conversational editing
@@ -629,6 +658,7 @@ export async function generateStoryboardForWorkflow(
 // Generate frames for workflow using FAL AI
 export async function generateFramesForWorkflow(
   workflow: VideoWorkflowState,
+  productId?: string,
   framePrompts?: Map<string, { firstFramePrompt: string; lastFramePrompt: string; referenceImageIds?: string[]; useComplexModel?: boolean }>,
   availableImages?: Map<string, { id: string; url: string; description: string; source: string }>
 ) {
@@ -649,6 +679,7 @@ export async function generateFramesForWorkflow(
       }
 
       const { runVideoGenerationPipeline } = await import("@/lib/videoGeneration");
+      const { saveVideoWorkflow, saveGeneratedFrame, saveGeneratedClip } = await import("@/lib/videoWorkflowDb");
 
       const clips = workflow.storyboard.clips.map(c => ({
         id: c.id,
@@ -656,7 +687,9 @@ export async function generateFramesForWorkflow(
         duration: c.duration,
       }));
 
-      console.log("[VIDEO GEN] Running pipeline with", clips.length, "clips");
+      // Get aspect ratio from workflow/storyline
+      const aspectRatio = workflow.aspectRatio || workflow.storyline?.aspectRatio || "9:16";
+      console.log("[VIDEO GEN] Running pipeline with", clips.length, "clips, aspect ratio:", aspectRatio);
 
       // Build available images map from workflow state if not provided
       const imagesMap = availableImages || new Map(
@@ -665,6 +698,7 @@ export async function generateFramesForWorkflow(
 
       const updatedWorkflow = { ...workflow };
       updatedWorkflow.stage = "generating";
+      updatedWorkflow.aspectRatio = aspectRatio as "9:16" | "16:9";
       updatedWorkflow.generatedFrames = clips.map(c => ({
         clipId: c.id,
         startFrameUrl: null,
@@ -677,10 +711,21 @@ export async function generateFramesForWorkflow(
         status: "pending" as const,
       }));
 
-      // Run pipeline with options
+      // Save initial workflow state to DB
+      if (productId) {
+        try {
+          await saveVideoWorkflow(updatedWorkflow, productId);
+        } catch (e) {
+          console.warn("[VIDEO GEN] Failed to save initial workflow state:", e);
+        }
+      }
+
+      // Run pipeline with options including aspect ratio
       for await (const progress of runVideoGenerationPipeline(clips, {
         framePrompts,
         availableImages: imagesMap,
+        aspectRatio: aspectRatio as "9:16" | "16:9",
+        productId,
       })) {
         console.log("[VIDEO GEN]", progress.phase, "-", progress.message);
 
@@ -694,6 +739,24 @@ export async function generateFramesForWorkflow(
             endFrameUrl: f.endUrl,
             status: f.status as "pending" | "generating" | "done",
           }));
+
+          // Save frames to DB as they complete
+          if (productId) {
+            for (const f of progress.frames) {
+              if (f.status === "done") {
+                try {
+                  if (f.startUrl) {
+                    await saveGeneratedFrame(workflow.id, f.clipId, "start", f.startUrl, productId);
+                  }
+                  if (f.endUrl) {
+                    await saveGeneratedFrame(workflow.id, f.clipId, "end", f.endUrl, productId);
+                  }
+                } catch (e) {
+                  console.warn("[VIDEO GEN] Failed to save frame to DB:", e);
+                }
+              }
+            }
+          }
         }
 
         if (progress.clips) {
@@ -702,12 +765,32 @@ export async function generateFramesForWorkflow(
             videoUrl: c.url,
             status: "done" as const,
           }));
+
+          // Save clips to DB as they complete
+          if (productId) {
+            for (const c of progress.clips) {
+              try {
+                await saveGeneratedClip(workflow.id, c.clipId, c.url, c.duration, productId);
+              } catch (e) {
+                console.warn("[VIDEO GEN] Failed to save clip to DB:", e);
+              }
+            }
+          }
         }
 
         if (progress.finalVideo) {
           updatedWorkflow.stage = "complete";
           updatedWorkflow.generationPhase = "done";
           updatedWorkflow.videoUrl = progress.finalVideo.url;
+        }
+
+        // Save workflow state periodically
+        if (productId && (progress.phase === "complete" || progress.clipIndex !== undefined)) {
+          try {
+            await saveVideoWorkflow(updatedWorkflow, productId);
+          } catch (e) {
+            console.warn("[VIDEO GEN] Failed to save workflow state:", e);
+          }
         }
 
         stream.update({
@@ -717,6 +800,8 @@ export async function generateFramesForWorkflow(
           complete: progress.phase === "complete",
           // Include individual clip URLs so UI can show them
           clipUrls: progress.finalVideo?.clipUrls || progress.clips?.map(c => c.url) || [],
+          // Include aspect ratio for UI sizing
+          aspectRatio,
         });
       }
 
@@ -729,3 +814,4 @@ export async function generateFramesForWorkflow(
 
   return stream.value;
 }
+

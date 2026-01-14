@@ -15,16 +15,17 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getProductById } from "@/app/actions/products";
-import { 
-  chatWithBrandAgent, 
-  getChatSessions, 
-  saveChatSession, 
-  getChatSessionById, 
+import {
+  chatWithBrandAgent,
+  getChatSessions,
+  saveChatSession,
+  getChatSessionById,
   updateChatSession,
   initiateVideoWorkflow,
   chatWithVideoAgent,
   generateStoryboardForWorkflow,
-  generateFramesForWorkflow
+  generateFramesForWorkflow,
+  loadActiveVideoWorkflow
 } from "@/app/actions/brand";
 import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
@@ -141,6 +142,18 @@ export default function ProductChatPage() {
             setCurrentSessionId(sessionIdFromUrl);
           }
         }
+
+        // Load active video workflow from database (for persistence across refresh)
+        try {
+          const activeWorkflow = await loadActiveVideoWorkflow(productId);
+          if (activeWorkflow) {
+            debugLog("Restored active workflow from DB:", activeWorkflow.id, activeWorkflow.stage);
+            setActiveVideoWorkflow(activeWorkflow);
+            setVideoModeMessages(activeWorkflow.messages || []);
+          }
+        } catch (e) {
+          console.warn("Failed to load active workflow:", e);
+        }
       }
     }
     loadData();
@@ -179,7 +192,7 @@ export default function ProductChatPage() {
     if (session && session.messages) {
       let maxImageIndex = 0;
       let loadedVideoWorkflow: VideoWorkflowState | null = null;
-      
+
       const loadedMessages: Message[] = session.messages.map((m: StoredMessage, i: number) => {
         // Track the highest image index for counter
         if (m.generatedImage?.imageIndex) {
@@ -201,7 +214,7 @@ export default function ProductChatPage() {
       setImageCounter(maxImageIndex);
       setSelectedChatId(sessionId);
       setCurrentSessionId(sessionId);
-      
+
       // Auto-activate video mode if there's an in-progress workflow
       if (loadedVideoWorkflow) {
         debugLog("Restoring video mode from saved workflow:", (loadedVideoWorkflow as VideoWorkflowState).stage);
@@ -227,7 +240,7 @@ export default function ProductChatPage() {
 
     const userMessage = input.trim();
     setInput("");
-    
+
     const userMessageId = `user-${Date.now()}`;
     const newMessages = [...messages, { id: userMessageId, role: "user" as const, content: userMessage }];
     setMessages(newMessages);
@@ -239,13 +252,13 @@ export default function ProductChatPage() {
       const messagesToSend = newMessages
         .filter((m) => m.content && m.content.trim().length > 0)
         .map((m) => ({ role: m.role, content: m.content }));
-      
+
       const streamValue = await chatWithBrandAgent(
         productId,
         messagesToSend,
         product
       );
-      
+
       const assistantMessageId = `assistant-${Date.now()}`;
       setMessages((prev) => [...prev, { id: assistantMessageId, role: "assistant", content: "" }]);
 
@@ -285,7 +298,7 @@ export default function ProductChatPage() {
             // Assign the next image index
             const newImageIndex = imageCounter + 1;
             setImageCounter(newImageIndex);
-            
+
             setMessages((prev) => {
               const next = [...prev];
               const last = next.find((m) => m.id === assistantMessageId);
@@ -302,7 +315,7 @@ export default function ProductChatPage() {
               return next;
             });
           }
-          
+
           // Handle video workflow request
           if (chunk.toolResult.type === "video_workflow_request" && product) {
             debugLog("Starting video workflow:", chunk.toolResult.goal);
@@ -314,11 +327,11 @@ export default function ProductChatPage() {
                 chunk.toolResult.goal
               );
               debugLog("Workflow initiated:", videoState.stage);
-              
+
               // Auto-activate video mode
               setActiveVideoWorkflow(videoState);
               setVideoModeMessages([]);
-              
+
               setMessages((prev) => {
                 const next = [...prev];
                 const last = next.find((m) => m.id === assistantMessageId);
@@ -331,7 +344,7 @@ export default function ProductChatPage() {
               console.error("Failed to start video workflow:", error);
             }
           }
-          
+
           // Refresh product data if brand was updated
           if (chunk.toolResult.success) {
             const updatedProduct = await getProductById(productId);
@@ -346,7 +359,7 @@ export default function ProductChatPage() {
           return prev;
         });
       });
-      
+
       // Only save if there's actual user content (not just the initial greeting)
       const userMessages = finalMessages.filter(m => m.role === "user");
       if (userMessages.length > 0) {
@@ -359,7 +372,7 @@ export default function ProductChatPage() {
             generatedImage: m.generatedImage,
             videoWorkflow: m.videoWorkflow,
           }));
-          
+
           if (currentSessionId) {
             // Update existing session
             await updateChatSession(
@@ -394,13 +407,14 @@ export default function ProductChatPage() {
   // Trigger frame generation for video workflow
   async function triggerFrameGeneration(workflow: VideoWorkflowState) {
     debugLog("Triggering frame generation for workflow:", workflow.id);
-    
+
     try {
-      const stream = await generateFramesForWorkflow(workflow);
-      
+      // Pass productId for DB persistence
+      const stream = await generateFramesForWorkflow(workflow, productId);
+
       for await (const chunk of readStreamableValue(stream)) {
         debugLog("Frame generation chunk:", chunk);
-        
+
         if (chunk?.workflow) {
           setActiveVideoWorkflow(chunk.workflow);
           // Also update the message's workflow state
@@ -412,11 +426,11 @@ export default function ProductChatPage() {
             )
           );
         }
-        
+
         if (chunk?.complete) {
           debugLog("Frame generation complete!");
           setVideoModeMessages((prev) => [
-            ...prev, 
+            ...prev,
             { role: "assistant", content: "All frames have been generated! Your video is ready." }
           ]);
         }
@@ -424,7 +438,7 @@ export default function ProductChatPage() {
     } catch (error) {
       console.error("Frame generation error:", error);
       setVideoModeMessages((prev) => [
-        ...prev, 
+        ...prev,
         { role: "assistant", content: "There was an error generating frames. Please try again." }
       ]);
     }
@@ -433,13 +447,13 @@ export default function ProductChatPage() {
   // Handle messages when in video workflow mode
   async function handleVideoModeMessage(message: string) {
     if (!activeVideoWorkflow || !product) return;
-    
+
     setIsVideoModeLoading(true);
     setVideoStreamingText("");
-    
+
     const newMessages = [...videoModeMessages, { role: "user", content: message }];
     setVideoModeMessages(newMessages);
-    
+
     try {
       // Use current workflow - storyboard generation happens via proceed_to_next_stage tool
       // DO NOT auto-generate storyboard here - let the AI agent handle stage transitions
@@ -449,11 +463,11 @@ export default function ProductChatPage() {
         activeVideoWorkflow,
         product
       );
-      
+
       let fullText = "";
       let lastKnownStage = activeVideoWorkflow.stage;
       let updatedWorkflow = activeVideoWorkflow;
-      
+
       for await (const chunk of readStreamableValue(stream)) {
         debugLog("Video chunk received:", {
           hasText: !!chunk?.text,
@@ -461,7 +475,7 @@ export default function ProductChatPage() {
           workflowStage: chunk?.workflow?.stage,
           textPreview: chunk?.text?.slice(0, 50),
         });
-        
+
         if (chunk?.text) {
           fullText += chunk.text;
           setVideoStreamingText(fullText);
@@ -471,9 +485,9 @@ export default function ProductChatPage() {
           const newStage = chunk.workflow.stage;
           lastKnownStage = newStage; // Update for next iteration
           updatedWorkflow = chunk.workflow;
-          
+
           debugLog("Stage transition:", prevStage, "->", newStage);
-          
+
           setActiveVideoWorkflow(chunk.workflow);
           // Also update the message's workflow state
           setMessages((prev) =>
@@ -483,12 +497,12 @@ export default function ProductChatPage() {
                 : m
             )
           );
-          
+
           // Exit video mode if cancelled
           if (newStage === "cancelled") {
             setActiveVideoWorkflow(null);
           }
-          
+
           // Trigger video generation when entering generating stage
           if (prevStage === "storyboard" && newStage === "generating") {
             debugLog("🎬 Triggering video generation pipeline!");
@@ -499,14 +513,14 @@ export default function ProductChatPage() {
           }
         }
       }
-      
+
       debugLog("Video stream complete, fullText:", fullText?.slice(0, 100));
-      
+
       // Add assistant message to video mode messages
       if (fullText) {
         const finalMessages = [...newMessages, { role: "assistant", content: fullText }];
         setVideoModeMessages(finalMessages);
-        
+
         // Sync messages to workflow state for persistence
         if (updatedWorkflow) {
           const workflowWithMessages = {
@@ -527,16 +541,16 @@ export default function ProductChatPage() {
     } catch (error) {
       console.error("Video mode error:", error);
     }
-    
+
     setIsVideoModeLoading(false);
     setVideoStreamingText("");
   }
 
   // Derived state for video mode
   const isVideoMode = !!activeVideoWorkflow;
-  
+
   return (
-    <div 
+    <div
       className="h-screen flex font-[var(--font-inter)] overflow-hidden transition-all duration-500 bg-[#faf9f7] text-[#1a1a1a]"
     >
       {/* Background Grid */}
@@ -563,11 +577,11 @@ export default function ProductChatPage() {
       </AnimatePresence>
 
       {/* Sidebar - Collapses in video mode */}
-      <motion.aside 
+      <motion.aside
         initial={false}
-        animate={{ 
+        animate={{
           width: isVideoMode ? 0 : 256,
-          opacity: isVideoMode ? 0 : 1 
+          opacity: isVideoMode ? 0 : 1
         }}
         transition={{ duration: 0.4, ease: "easeInOut" }}
         className="border-r border-black/[0.04] bg-white/70 backdrop-blur-xl flex flex-col relative z-10 overflow-hidden"
@@ -580,7 +594,7 @@ export default function ProductChatPage() {
             <ArrowLeft size={12} />
             {product?.name || "Product"}
           </Link>
-          <button 
+          <button
             onClick={() => {
               setMessages([{ id: "initial", role: "assistant", content: "What would you like to research or update today?" }]);
               setSelectedChatId(null);
@@ -798,8 +812,8 @@ export default function ProductChatPage() {
                   }
                 }
               }}
-              placeholder={isVideoMode 
-                ? "Edit clips, continue, or cancel..." 
+              placeholder={isVideoMode
+                ? "Edit clips, continue, or cancel..."
                 : "Ask about competitors, market trends, or update your brand..."}
               disabled={isThinking || isVideoModeLoading}
               rows={2}
