@@ -5,6 +5,7 @@ import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { updateProduct } from "@/app/actions/brand";
 import { BaseMessage, AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { generateAndStoreImage } from "@/lib/mediaGeneration";
 
 // Define State
 const AgentState = Annotation.Root({
@@ -174,68 +175,214 @@ const generateTwitterThreadTool = tool(
 );
 
 const generateMarketingImageTool = tool(
-  async ({ prompt, style, platform }) => {
-    // Mock: return static stock image
-    // Note: image_id and url are for internal use only - not exposed to AI
-    const imageId = `img_${Date.now()}`;
-    const stockImageUrl = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80";
+  async ({ productId, prompt, style, platform, complex, subject, action, shot_type, lighting, text_headline, text_location }) => {
+    console.log("[IMAGE TOOL] generate_marketing_image called:", { productId, prompt: prompt.slice(0, 50), complex });
     
-    return JSON.stringify({
-      type: "generated_image",
-      // Internal fields (for UI rendering, not for AI context)
-      _internal: {
-        image_id: imageId,
-        url: stockImageUrl,
-      },
-      // Fields visible to AI (no URLs or raw IDs)
-      prompt,
-      style,
-      platform: platform || "instagram_post",
-      status: "completed",
-      editable: true,
-      message: "Image generated successfully. The user can see it in the chat and edit it if needed.",
-    });
+    try {
+      // Determine aspect ratio based on platform
+      const aspectRatios: Record<string, string> = {
+        instagram_post: "1:1",
+        instagram_story: "9:16",
+        facebook_ad: "16:9",
+        linkedin: "1.91:1",
+      };
+      const aspectRatio = aspectRatios[platform || "instagram_post"] || "1:1";
+      
+      // Professional photography prompt structure
+      const styleSettings: Record<string, { lighting: string; palette: string; vibe: string }> = {
+        minimal: {
+          lighting: "Soft diffused studio lighting with clean shadows",
+          palette: "Matte pastels, neutral tones, lots of white space",
+          vibe: "Minimalist & Clean",
+        },
+        bold: {
+          lighting: "High-contrast dramatic lighting with bold shadows",
+          palette: "Vibrant saturated colors, high contrast, dynamic composition",
+          vibe: "Bold & Energetic",
+        },
+        cinematic: {
+          lighting: "Golden hour sunlight with warm orange to pink gradients",
+          palette: "Warm cinematic tones, premium aesthetic, soft bokeh",
+          vibe: "Cinematic & Premium",
+        },
+        corporate: {
+          lighting: "Professional studio lighting, clean and even",
+          palette: "Professional blues and grays, trustworthy appearance",
+          vibe: "Professional & Corporate",
+        },
+      };
+      
+      const settings = styleSettings[style] || styleSettings.cinematic;
+      
+      // Build professional photography prompt
+      let enhancedPrompt = `[Role]: Expert Creative Director and Photographer.
+[Task]: Generate a high-conversion advertising image.
+
+[Subject & Action]:
+${subject ? `Show ${subject} in the center of the frame.` : prompt}
+${action ? `The subject is ${action}.` : ""}
+The product looks premium, high-quality, and desirable.
+
+[Composition & Camera]:
+- Shot type: ${shot_type || "Product hero shot, eye-level, dynamic angle"}
+- Focus: Sharp focus on the subject, creamy bokeh background (f/1.8 aperture).
+- Lighting: ${lighting || settings.lighting}
+- Palette: ${settings.palette}`;
+
+      // Add text rendering for nanobanana (supports text)
+      if (text_headline && complex) {
+        enhancedPrompt += `
+
+[Text Rendering]:
+- Text to render: "${text_headline}" in a bold, modern sans-serif font.
+- Text location: ${text_location || "Floating elegantly above the product, integrated naturally into the scene"}
+- Ensure text is legible, spelled correctly, and integrated naturally into the scene.`;
+      }
+
+      enhancedPrompt += `
+
+[Quality & Style]:
+Professional advertising photography, 8K resolution, magazine quality, ${settings.vibe} aesthetic.
+
+[Negative Prompt]:
+(blurry, low quality, distorted text, bad spelling, watermark, extra limbs, ugly, messy composition, dull colors, amateur, stock photo look)`;
+
+      console.log("[IMAGE TOOL] Enhanced prompt:", enhancedPrompt.slice(0, 200));
+      
+      // Generate and store the image using FAL AI
+      const result = await generateAndStoreImage(productId, {
+        prompt: enhancedPrompt,
+        complex: complex || false,
+        aspectRatio,
+        resolution: "2K",
+        title: `Marketing image - ${platform || "general"}`,
+      });
+      
+      return JSON.stringify({
+        type: "generated_image",
+        // Internal fields (for UI rendering, not for AI context)
+        _internal: {
+          image_id: result.imageId,
+          url: result.publicUrl,
+          storage_path: result.storagePath,
+        },
+        // Fields visible to AI (no URLs or raw IDs)
+        prompt,
+        style,
+        platform: platform || "instagram_post",
+        status: "completed",
+        editable: true,
+        message: "Image generated successfully. The user can see it in the chat and edit it if needed.",
+      });
+    } catch (error: any) {
+      console.error("[IMAGE TOOL] Generation failed:", error);
+      return JSON.stringify({
+        type: "error",
+        message: `Image generation failed: ${error.message}`,
+        status: "failed",
+      });
+    }
   },
   {
     name: "generate_marketing_image",
-    description: "Generate a marketing image for the brand. Returns an image that can be viewed and edited by the user. Do NOT mention any image IDs or URLs to the user - they will see the image automatically in the chat interface.",
+    description: "Generate a professional marketing/advertising image using AI. Creates high-quality product photography and ads. Returns an image that can be viewed and edited by the user.",
     schema: z.object({
-      prompt: z.string().describe("Detailed description of the image to generate"),
-      style: z.enum(["minimal", "bold", "cinematic", "corporate"]).describe("Visual style"),
-      platform: z.enum(["instagram_post", "instagram_story", "facebook_ad", "linkedin"]).optional().describe("Target platform"),
+      productId: z.string().describe("The product ID to associate this image with"),
+      prompt: z.string().describe("Main description of the image to generate - what should be shown"),
+      subject: z.string().optional().describe("What/who is the main subject (e.g., 'the product bottle', 'a person using the app')"),
+      action: z.string().optional().describe("What is the subject doing (e.g., 'splashing into water', 'glowing on a dark table', 'being held by a smiling model')"),
+      shot_type: z.string().optional().describe("Camera shot type (e.g., 'Macro product shot', 'Eye-level lifestyle shot', '45-degree flat lay', 'Close-up detail shot')"),
+      lighting: z.string().optional().describe("Lighting style (e.g., 'Soft studio lighting', 'Golden hour sunlight', 'Neon cyberpunk lighting', 'Dramatic rim lighting')"),
+      style: z.enum(["minimal", "bold", "cinematic", "corporate"]).describe("Visual style preset"),
+      platform: z.enum(["instagram_post", "instagram_story", "facebook_ad", "linkedin"]).optional().describe("Target platform for aspect ratio"),
+      complex: z.boolean().optional().describe("If true, uses nanobanana pro (higher quality, supports text rendering). Default false uses seedream (faster)."),
+      text_headline: z.string().optional().describe("Text to render on the image (only works with complex=true). E.g., 'New Release', 'Limited Edition'"),
+      text_location: z.string().optional().describe("Where to place the text. E.g., 'Floating above product', 'Neon sign in background', 'On elegant label'"),
     }),
   }
 );
 
 const editImageTool = tool(
-  async ({ image_reference, edit_prompt }) => {
-    // Mock: return stock image with updated metadata
-    // Note: image_id and url are for internal use only - not exposed to AI
-    const stockImageUrl = "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&q=80";
-    const newImageId = `img_${Date.now()}`;
+  async ({ productId, image_reference, original_image_url, edit_prompt, platform }) => {
+    console.log("[IMAGE TOOL] edit_image called:", { productId, image_reference, hasOriginalUrl: !!original_image_url, edit_prompt: edit_prompt.slice(0, 50) });
     
-    return JSON.stringify({
-      type: "generated_image",
-      // Internal fields (for UI rendering, not for AI context)
-      _internal: {
-        image_id: newImageId,
-        url: stockImageUrl,
-        original_reference: image_reference,
-      },
-      // Fields visible to AI (no URLs or raw IDs)
-      prompt: edit_prompt,
-      status: "completed",
-      editable: true,
-      is_edit: true,
-      message: "Image edited successfully. The user can see the updated image in the chat.",
-    });
+    try {
+      // Determine aspect ratio based on platform (inherit from original if not specified)
+      const aspectRatios: Record<string, string> = {
+        instagram_post: "1:1",
+        instagram_story: "9:16",
+        facebook_ad: "16:9",
+        linkedin: "1.91:1",
+      };
+      const aspectRatio = platform ? aspectRatios[platform] : "auto";
+      
+      // Build professional edit prompt with reference image context
+      const enhancedEditPrompt = `[Role]: Expert Creative Director and Photo Editor.
+[Task]: Edit/modify the reference image based on these instructions.
+
+[Reference Image]: Use the provided reference image as the base for coherence and consistency.
+
+[Edit Instructions]:
+${edit_prompt}
+
+[Quality Requirements]:
+- Maintain the original image's composition and style where appropriate
+- Apply changes seamlessly and naturally
+- Preserve image quality and resolution
+- Ensure professional advertising quality result
+
+[Negative Prompt]:
+(blurry, low quality, distorted, artifacts, unnatural edits, poor blending, watermark)`;
+      
+      // Use reference-based generation with complex=true for higher quality edits
+      // The original_image_url should be provided by the UI when user references an image
+      const imageRefs = original_image_url ? [original_image_url] : [];
+      
+      console.log("[IMAGE TOOL] Edit with refs:", { refCount: imageRefs.length, aspectRatio });
+      
+      const result = await generateAndStoreImage(productId, {
+        prompt: enhancedEditPrompt,
+        complex: true, // Use nanobanana pro for edits (better coherence with reference)
+        imageRefs,
+        aspectRatio,
+        resolution: "2K",
+        title: `Edited image from ${image_reference}`,
+      });
+      
+      return JSON.stringify({
+        type: "generated_image",
+        // Internal fields (for UI rendering, not for AI context)
+        _internal: {
+          image_id: result.imageId,
+          url: result.publicUrl,
+          storage_path: result.storagePath,
+          original_reference: image_reference,
+        },
+        // Fields visible to AI (no URLs or raw IDs)
+        prompt: edit_prompt,
+        status: "completed",
+        editable: true,
+        is_edit: true,
+        message: "Image edited successfully. The user can see the updated image in the chat.",
+      });
+    } catch (error: any) {
+      console.error("[IMAGE TOOL] Edit failed:", error);
+      return JSON.stringify({
+        type: "error",
+        message: `Image edit failed: ${error.message}`,
+        status: "failed",
+      });
+    }
   },
   {
     name: "edit_image",
-    description: "REQUIRED: You MUST call this tool when the user mentions @image1, @image2, or any @imageN reference and wants to edit, modify, change, or update an image. This tool ACTUALLY performs the edit - do not pretend to edit without calling this tool.",
+    description: "REQUIRED: You MUST call this tool when the user mentions @image1, @image2, or any @imageN reference and wants to edit, modify, change, or update an image. This tool uses the original image as a reference to generate a coherent edit. ALWAYS try to provide the original_image_url for best results.",
     schema: z.object({
+      productId: z.string().describe("The product ID to associate this image with"),
       image_reference: z.string().describe("The image reference from the user's message (e.g., @image1, @image2). Copy this exactly as the user wrote it."),
+      original_image_url: z.string().optional().describe("URL of the original image being edited. CRUCIAL for reference-based editing - this enables coherent edits that maintain the original style."),
       edit_prompt: z.string().describe("Detailed description of all the changes the user wants to make to the image"),
+      platform: z.enum(["instagram_post", "instagram_story", "facebook_ad", "linkedin"]).optional().describe("Target platform for aspect ratio - if not specified, inherits from original"),
     }),
   }
 );
@@ -280,6 +427,7 @@ const callModel = async (state: typeof AgentState.State) => {
 You are Emily, an elite AI strategist and creative partner for "${product?.name}".
 
 **BRAND CONTEXT:**
+- Product ID: ${product?.id}
 - Name: ${product?.name}
 - Description: ${product?.description || "Not set"}
 - Target Audience: ${product?.extracted_info?.target_audience || "Not set"}
@@ -309,6 +457,7 @@ You seamlessly blend research, strategy, and content creation. Use any combinati
 - NEVER mention image IDs, URLs, or internal references to the user
 - When you generate images, the user sees them automatically in the chat
 - Users reference images as @image1, @image2, etc. when requesting edits
+- **IMPORTANT**: When calling generate_marketing_image or edit_image, ALWAYS pass the Product ID from the context above
 - **IMPORTANT**: When a user mentions @image1, @image2, etc. and asks to edit/modify/change it, you MUST call the edit_image tool. Do NOT just say you edited it - actually call the tool!
 - Simply acknowledge that you've created/edited the image—don't share technical details
 
