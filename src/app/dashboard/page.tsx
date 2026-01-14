@@ -48,12 +48,45 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="flex h-screen bg-[#faf9f7] text-[#1a1a1a] overflow-hidden font-[var(--font-inter)]">
-      {/* Background */}
-      <div className="fixed inset-0 bg-dots pointer-events-none opacity-40" />
+    <div className="flex h-screen bg-[#faf9f7] text-[#1a1a1a] overflow-hidden font-[var(--font-inter)] fluid-container">
+      {/* Enhanced Background with Mesh Gradient */}
+      <div className="fixed inset-0 mesh-gradient-enhanced pointer-events-none" />
+      <div className="fixed inset-0 bg-dots-gradient pointer-events-none opacity-30" />
+      <div className="fixed inset-0 bg-lines pointer-events-none opacity-20" />
+      
+      {/* Floating Blur Orbs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <motion.div
+          className="blur-orb-orange top-[-200px] right-[5%]"
+          animate={{
+            x: [0, 30, -20, 0],
+            y: [0, -40, 20, 0],
+            scale: [1, 1.1, 0.9, 1],
+          }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="blur-orb-pink bottom-[10%] left-[-150px]"
+          animate={{
+            x: [0, 40, -30, 0],
+            y: [0, 30, -40, 0],
+            scale: [1, 1.15, 0.85, 1],
+          }}
+          transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="blur-orb-amber top-[40%] right-[-100px]"
+          animate={{
+            x: [0, -30, 40, 0],
+            y: [0, 50, -30, 0],
+            scale: [1, 1.2, 0.8, 1],
+          }}
+          transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </div>
 
       {/* Sidebar */}
-      <aside className="w-64 border-r border-black/[0.04] bg-white/60 backdrop-blur-xl flex flex-col relative z-10">
+      <aside className="w-64 border-r border-black/[0.04] glass-morphism flex flex-col relative z-10">
         <div className="p-6 flex items-center gap-3">
           <img src="/logo.png" alt="EmilyAI" className="w-8 h-8 object-contain" />
           <span className="font-semibold text-lg tracking-tight">EmilyAI</span>
@@ -106,7 +139,7 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
-        <header className="h-16 border-b border-black/[0.04] flex items-center justify-between px-8 bg-white/60 backdrop-blur-xl z-10">
+        <header className="h-16 border-b border-black/[0.04] flex items-center justify-between px-8 glass-morphism z-10">
           <h2 className="text-xs font-[var(--font-jetbrains)] font-medium uppercase tracking-widest text-[#1a1a1a]/40">
             {sidebarItems.find((i) => i.id === activeTab)?.label}
           </h2>
@@ -123,9 +156,7 @@ export default function DashboardPage() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8 relative">
-          {/* Decorative blur */}
-          <div className="blur-orb-orange top-[-100px] right-[10%] opacity-50" />
+        <div className="flex-1 overflow-y-auto p-8 relative bg-noise">
 
           <AnimatePresence mode="wait">
             <motion.div

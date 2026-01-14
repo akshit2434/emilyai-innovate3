@@ -152,26 +152,63 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[var(--cream-paper)] text-[var(--charcoal-plum)] overflow-x-hidden font-[var(--font-inter)]">
+    <div className="min-h-screen bg-[var(--cream-paper)] text-[var(--charcoal-plum)] overflow-x-hidden font-[var(--font-inter)] fluid-container">
+      {/* Enhanced Mesh Gradient Background */}
+      <div className="fixed inset-0 mesh-gradient-enhanced pointer-events-none" />
+      
+      {/* Subtle Background Patterns */}
+      <div className="fixed inset-0 bg-dots-gradient pointer-events-none opacity-25" />
+      <div className="fixed inset-0 bg-lines pointer-events-none opacity-15" />
+      
       {/* Grain overlay */}
-      <div className="grain-overlay" />
+      <div className="grain-overlay bg-noise" />
 
-      {/* Floating background orbs */}
+      {/* Floating background orbs with enhanced motion */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <motion.div
           className="blur-orb-peach top-[-250px] right-[-150px]"
-          animate={{ x: [0, 30, -20, 0], y: [0, -40, 20, 0] }}
+          animate={{ 
+            x: [0, 30, -20, 0], 
+            y: [0, -40, 20, 0],
+            scale: [1, 1.15, 0.9, 1],
+          }}
           transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
         />
         <motion.div
           className="blur-orb-blush bottom-[20%] left-[-250px]"
-          animate={{ x: [0, 40, -30, 0], y: [0, 30, -40, 0] }}
+          animate={{ 
+            x: [0, 40, -30, 0], 
+            y: [0, 30, -40, 0],
+            scale: [1, 1.2, 0.85, 1],
+          }}
           transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
         />
         <motion.div
           className="blur-orb-lavender top-[35%] right-[-200px]"
-          animate={{ x: [0, -30, 40, 0], y: [0, 50, -30, 0] }}
+          animate={{ 
+            x: [0, -30, 40, 0], 
+            y: [0, 50, -30, 0],
+            scale: [1, 1.1, 0.95, 1],
+          }}
           transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="blur-orb-amber top-[60%] left-[10%]"
+          animate={{ 
+            x: [0, 25, -35, 0], 
+            y: [0, -25, 35, 0],
+            scale: [1, 1.25, 0.8, 1],
+          }}
+          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="blur-orb-rose bottom-[30%] right-[15%]"
+          animate={{ 
+            x: [0, -25, 30, 0], 
+            y: [0, 40, -20, 0],
+            scale: [1, 1.18, 0.88, 1],
+          }}
+          transition={{ duration: 24, repeat: Infinity, ease: "easeInOut" }}
         />
       </div>
 
