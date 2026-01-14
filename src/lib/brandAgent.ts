@@ -25,7 +25,7 @@ const AgentState = Annotation.Root({
 
 // 1. Define the LLM
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-pro",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.7,
   streaming: true,
@@ -36,17 +36,17 @@ const llm = new ChatGoogleGenerativeAI({
 const updateBrandInfoTool = tool(
   async ({ productId, name, description, tagline, target_audience, value_proposition, industry }) => {
     console.log("Updating product info via tool:", { productId, name });
-    
+
     const updates: any = {};
     if (name) updates.name = name;
     if (description) updates.description = description;
-    
+
     const extractedInfo: any = {};
     if (tagline) extractedInfo.tagline = tagline;
     if (target_audience) extractedInfo.target_audience = target_audience;
     if (value_proposition) extractedInfo.value_proposition = value_proposition;
     if (industry) extractedInfo.industry = industry;
-    
+
     if (Object.keys(extractedInfo).length > 0) {
       updates.extracted_info = extractedInfo;
     }
@@ -126,58 +126,10 @@ const webSearchTool = tool(
 
 const tools = [updateBrandInfoTool, webSearchTool];
 
-// Mock Asset Generation Tools
-const generateLinkedInPostTool = tool(
-  async ({ topic, tone }) => {
-    const mockPost = `🚀 ${topic}
-
-This is a generated LinkedIn post about ${topic}.
-Tone: ${tone}
-
-[AI-generated content placeholder]
-
-#startup #innovation #growth`;
-    return JSON.stringify({ 
-      type: "linkedin",
-      content: mockPost,
-      status: "completed"
-    });
-  },
-  {
-    name: "generate_linkedin_post",
-    description: "Generate a LinkedIn post for the brand.",
-    schema: z.object({
-      topic: z.string().describe("The topic of the post"),
-      tone: z.enum(["professional", "casual", "inspiring", "educational"]).describe("Tone"),
-    }),
-  }
-);
-
-const generateTwitterThreadTool = tool(
-  async ({ topic, tweet_count }) => {
-    const mockThread = Array.from({ length: tweet_count }, (_, i) => 
-      `${i + 1}/${tweet_count}: [Tweet about ${topic}]`
-    ).join("\n\n");
-    return JSON.stringify({ 
-      type: "twitter",
-      content: mockThread,
-      status: "completed"
-    });
-  },
-  {
-    name: "generate_twitter_thread",
-    description: "Generate a Twitter/X thread.",
-    schema: z.object({
-      topic: z.string().describe("Thread topic"),
-      tweet_count: z.number().min(2).max(10).describe("Number of tweets"),
-    }),
-  }
-);
-
 const generateMarketingImageTool = tool(
   async ({ productId, prompt, style, platform, complex, subject, action, shot_type, lighting, text_headline, text_location }) => {
     console.log("[IMAGE TOOL] generate_marketing_image called:", { productId, prompt: prompt.slice(0, 50), complex });
-    
+
     try {
       // Determine aspect ratio based on platform
       const aspectRatios: Record<string, string> = {
@@ -187,7 +139,7 @@ const generateMarketingImageTool = tool(
         linkedin: "1.91:1",
       };
       const aspectRatio = aspectRatios[platform || "instagram_post"] || "1:1";
-      
+
       // Professional photography prompt structure
       const styleSettings: Record<string, { lighting: string; palette: string; vibe: string }> = {
         minimal: {
@@ -211,9 +163,9 @@ const generateMarketingImageTool = tool(
           vibe: "Professional & Corporate",
         },
       };
-      
+
       const settings = styleSettings[style] || styleSettings.cinematic;
-      
+
       // Build professional photography prompt
       const role = complex ? "Expert Graphic Designer and Creative Director" : "Expert Creative Director and Photographer";
       const task = complex ? "Generate a high-conversion advertising design with complex layout and typography" : "Generate a high-conversion advertising image";
@@ -258,7 +210,7 @@ Professional advertising quality, 8K resolution, ${settings.vibe} aesthetic.
 (blurry, low quality, distorted text, bad spelling, watermark, extra limbs, ugly, messy composition, dull colors, amateur, stock photo look)`;
 
       console.log("[IMAGE TOOL] Enhanced prompt:", enhancedPrompt.slice(0, 300));
-      
+
       // Generate and store the image using FAL AI
       const result = await generateAndStoreImage(productId, {
         prompt: enhancedPrompt,
@@ -267,7 +219,7 @@ Professional advertising quality, 8K resolution, ${settings.vibe} aesthetic.
         resolution: "2K",
         title: `Marketing image - ${platform || "general"}`,
       });
-      
+
       return JSON.stringify({
         type: "generated_image",
         // Internal fields (for UI rendering, not for AI context)
@@ -315,7 +267,7 @@ Professional advertising quality, 8K resolution, ${settings.vibe} aesthetic.
 const editImageTool = tool(
   async ({ productId, image_reference, original_image_url, edit_prompt, platform }) => {
     console.log("[IMAGE TOOL] edit_image called:", { productId, image_reference, hasOriginalUrl: !!original_image_url, edit_prompt: edit_prompt.slice(0, 50) });
-    
+
     try {
       // Determine aspect ratio based on platform (inherit from original if not specified)
       const aspectRatios: Record<string, string> = {
@@ -325,7 +277,7 @@ const editImageTool = tool(
         linkedin: "1.91:1",
       };
       const aspectRatio = platform ? aspectRatios[platform] : "auto";
-      
+
       // Build professional edit prompt with reference image context
       const enhancedEditPrompt = `[Role]: Expert Creative Director and Photo Editor.
 [Task]: Edit/modify the reference image based on these instructions.
@@ -343,13 +295,13 @@ ${edit_prompt}
 
 [Negative Prompt]:
 (blurry, low quality, distorted, artifacts, unnatural edits, poor blending, watermark)`;
-      
+
       // Use reference-based generation with complex=true for higher quality edits
       // The original_image_url should be provided by the UI when user references an image
       const imageRefs = original_image_url ? [original_image_url] : [];
-      
+
       console.log("[IMAGE TOOL] Edit with refs:", { refCount: imageRefs.length, aspectRatio });
-      
+
       const result = await generateAndStoreImage(productId, {
         prompt: enhancedEditPrompt,
         complex: true, // Use nanobanana pro for edits (better coherence with reference)
@@ -358,7 +310,7 @@ ${edit_prompt}
         resolution: "2K",
         title: `Edited image from ${image_reference}`,
       });
-      
+
       return JSON.stringify({
         type: "generated_image",
         // Internal fields (for UI rendering, not for AI context)
@@ -422,8 +374,6 @@ const generateVideoAdTool = tool(
 const allTools = [
   updateBrandInfoTool,
   webSearchTool,
-  generateLinkedInPostTool,
-  generateTwitterThreadTool,
   generateMarketingImageTool,
   editImageTool,
   generateVideoAdTool,
@@ -452,10 +402,17 @@ You seamlessly blend research, strategy, and content creation. Use any combinati
 
 2. **Brand Strategy**: Help refine positioning, messaging, and identity. When users share business problems, ask smart clarifying questions to understand root causes before prescribing solutions. Think like a consultant—frameworks, data, actionable insights.
 
-3. **Asset Creation**: Marketing images, social posts, ad copy. When asked to create:
-   - Ask 2-3 quick context questions (platform? goal? tone?) to minimize assumptions
+3. **Asset Creation**: Marketing images, video ads, social content. When asked to create:
+   - Ask 1-2 quick context questions if needed (platform? goal?)
    - If user seems eager or says "just make something", get creative using brand context
    - Always generate detailed prompts aligned with the brand aesthetic
+
+4. **Social Media Content**: You can write optimized posts DIRECTLY in your response for any platform:
+   - **LinkedIn**: Hook in first 2 lines, use line breaks, 3-5 hashtags at end, professional tone, end with CTA
+   - **Twitter/X**: Under 280 chars, strong hooks, punchy tone, 1-2 hashtags max
+   - **Instagram**: Visual appeal, emojis, story-driven, end with CTA, hashtags at very end
+   
+   When users ask for social content, write it directly in your response—no tools needed. Format it nicely so they can copy-paste. Offer to adjust tone/style after.
 
 **ASSET GUIDELINES (when creating visuals):**
 - Warm color palette: orange (#f97316) to pink (#ec4899) gradients
@@ -490,31 +447,31 @@ When user asks about business issues (conversions, growth, positioning, etc.):
 
 **STYLE:** Concise, sharp, helpful. You're a collaborator, not a generic assistant. No fluff.
   `);
-  
+
   // Debug: log available tools
   console.log("[brandAgent] Available tools:", allTools.map(t => t.name));
-  
+
   const modelWithTools = llm.bindTools(allTools);
   const response = await modelWithTools.invoke([systemPrompt, ...messages]);
-  
+
   // Debug: log response details
   console.log("[brandAgent] Response tool_calls:", response.tool_calls);
   console.log("[brandAgent] Response content preview:", typeof response.content === 'string' ? response.content.slice(0, 100) : '[non-string]');
-  
+
   return { messages: [response] };
 };
 
 const shouldContinue = (state: typeof AgentState.State) => {
   const { messages, iterationCount } = state;
   const lastMessage = messages[messages.length - 1] as AIMessage;
-  
+
   // Prevent infinite loops - max 5 tool call rounds
   const MAX_ITERATIONS = 5;
   if (iterationCount >= MAX_ITERATIONS) {
     console.warn(`[brandAgent] Max iterations (${MAX_ITERATIONS}) reached, stopping`);
     return END;
   }
-  
+
   if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
     console.log(`[brandAgent] Iteration ${iterationCount}: Calling ${lastMessage.tool_calls.length} tools`);
     return "tools";

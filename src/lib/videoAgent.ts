@@ -74,13 +74,13 @@ export interface VideoWorkflowState {
   // Aspect ratio for the video (derived from storyline)
   aspectRatio?: "9:16" | "16:9";
   // Detailed prompts for frame and video generation
-  framePrompts?: Record<string, { 
-    firstFramePrompt: string; 
-    lastFramePrompt: string; 
-    videoGenerationPrompt?: string; 
-    audioGenerationPrompt?: string; 
-    referenceImageIds?: string[]; 
-    useComplexModel?: boolean; 
+  framePrompts?: Record<string, {
+    firstFramePrompt: string;
+    lastFramePrompt: string;
+    videoGenerationPrompt?: string;
+    audioGenerationPrompt?: string;
+    referenceImageIds?: string[];
+    useComplexModel?: boolean;
   }>;
 }
 
@@ -121,7 +121,7 @@ const VideoAgentState = Annotation.Root({
 // ============================================================================
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-pro",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.8,
   streaming: true,
@@ -303,7 +303,7 @@ const setStoryboardTool = tool(
       isContinuation: c.isContinuation || false,
     }));
     const totalDuration = formattedClips.reduce((sum: number, c: any) => sum + c.duration, 0);
-    
+
     return JSON.stringify({
       type: "workflow_update",
       action: "set_storyboard",

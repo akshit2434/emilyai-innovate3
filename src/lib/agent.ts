@@ -16,7 +16,7 @@ const AgentState = Annotation.Root({
 
 // 1. Define the LLM
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-pro",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.7,
 });
@@ -89,7 +89,7 @@ RULES:
 - Do NOT offer to "explore further" or "dive deeper"
 - If they give enough info (even minimal), present the summary. Don't ask for more.
 - Fill gaps with smart defaults rather than asking questions`);
-  
+
   const modelWithTools = llm.bindTools(tools);
   const response = await modelWithTools.invoke([systemPrompt, ...messages]);
   return { messages: [response] };
@@ -98,7 +98,7 @@ RULES:
 const shouldContinue = (state: typeof AgentState.State) => {
   const { messages } = state;
   const lastMessage = messages[messages.length - 1] as AIMessage;
-  
+
   if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
     return "tools";
   }
