@@ -24,7 +24,7 @@ const AgentState = Annotation.Root({
 
 // 1. Define the LLM
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.7,
   streaming: true,
@@ -313,8 +313,9 @@ You seamlessly blend research, strategy, and content creation. Use any combinati
 - Simply acknowledge that you've created/edited the image—don't share technical details
 
 **CRITICAL - VIDEO HANDLING:**
-- When users ask for video ads, reels, shorts, TikToks, or any video content, you MUST call the request_video_ad tool
-- Do NOT just describe what a video would look like - actually call the tool to start the workflow
+- When users ask for video ads, reels, shorts, TikToks, or any video content, you MUST call the generate_video_ad tool IMMEDIATELY
+- Do NOT respond with text first - call the tool right away
+- Do NOT just describe what a video would look like - call the generate_video_ad tool!
 - The tool starts an interactive process where the user approves each step (storyline → storyboard → generation)
 - After calling the tool, briefly acknowledge that you're starting the video workflow
 
@@ -328,8 +329,16 @@ When user asks about business issues (conversions, growth, positioning, etc.):
 **STYLE:** Concise, sharp, helpful. You're a collaborator, not a generic assistant. No fluff.
   `);
   
+  // Debug: log available tools
+  console.log("[brandAgent] Available tools:", allTools.map(t => t.name));
+  
   const modelWithTools = llm.bindTools(allTools);
   const response = await modelWithTools.invoke([systemPrompt, ...messages]);
+  
+  // Debug: log response details
+  console.log("[brandAgent] Response tool_calls:", response.tool_calls);
+  console.log("[brandAgent] Response content preview:", typeof response.content === 'string' ? response.content.slice(0, 100) : '[non-string]');
+  
   return { messages: [response] };
 };
 

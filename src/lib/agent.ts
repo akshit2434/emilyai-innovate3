@@ -16,7 +16,7 @@ const AgentState = Annotation.Root({
 
 // 1. Define the LLM
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.7,
 });

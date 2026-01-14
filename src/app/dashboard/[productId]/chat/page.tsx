@@ -23,7 +23,8 @@ import {
   updateChatSession,
   initiateVideoWorkflow,
   chatWithVideoAgent,
-  generateStoryboardForWorkflow
+  generateStoryboardForWorkflow,
+  generateFramesForWorkflow
 } from "@/app/actions/brand";
 import { readStreamableValue } from "@ai-sdk/rsc";
 import { Product } from "@/types";
@@ -31,6 +32,8 @@ import { cn } from "@/lib/utils";
 import { CinematicMessage } from "@/components/chat/CinematicMessage";
 import { ImageViewer } from "@/components/chat/ImageViewer";
 import { ToolStatusPill } from "@/components/chat/ToolStatusPill";
+import { VideoWorkflowCard } from "@/components/chat/VideoWorkflowCard";
+import { VideoSubgraphView } from "@/components/video/VideoSubgraphView";
 import type { VideoWorkflowState } from "@/lib/videoAgent";
 
 const DEBUG = true;
@@ -203,7 +206,9 @@ export default function ProductChatPage() {
       if (loadedVideoWorkflow) {
         debugLog("Restoring video mode from saved workflow:", (loadedVideoWorkflow as VideoWorkflowState).stage);
         setActiveVideoWorkflow(loadedVideoWorkflow as VideoWorkflowState);
-        setVideoModeMessages([]);
+        // Restore video mode messages from workflow if available
+        const workflowMessages = (loadedVideoWorkflow as VideoWorkflowState).messages || [];
+        setVideoModeMessages(workflowMessages);
       }
     }
   }
@@ -386,6 +391,45 @@ export default function ProductChatPage() {
     setIsThinking(false);
   }
 
+  // Trigger frame generation for video workflow
+  async function triggerFrameGeneration(workflow: VideoWorkflowState) {
+    debugLog("Triggering frame generation for workflow:", workflow.id);
+    
+    try {
+      const stream = await generateFramesForWorkflow(workflow);
+      
+      for await (const chunk of readStreamableValue(stream)) {
+        debugLog("Frame generation chunk:", chunk);
+        
+        if (chunk?.workflow) {
+          setActiveVideoWorkflow(chunk.workflow);
+          // Also update the message's workflow state
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.videoWorkflow?.id === chunk.workflow.id
+                ? { ...m, videoWorkflow: chunk.workflow }
+                : m
+            )
+          );
+        }
+        
+        if (chunk?.complete) {
+          debugLog("Frame generation complete!");
+          setVideoModeMessages((prev) => [
+            ...prev, 
+            { role: "assistant", content: "All frames have been generated! Your video is ready." }
+          ]);
+        }
+      }
+    } catch (error) {
+      console.error("Frame generation error:", error);
+      setVideoModeMessages((prev) => [
+        ...prev, 
+        { role: "assistant", content: "There was an error generating frames. Please try again." }
+      ]);
+    }
+  }
+
   // Handle messages when in video workflow mode
   async function handleVideoModeMessage(message: string) {
     if (!activeVideoWorkflow || !product) return;
@@ -397,22 +441,19 @@ export default function ProductChatPage() {
     setVideoModeMessages(newMessages);
     
     try {
-      // Check if we need to generate storyboard first (when proceeding from storyline)
-      let workflowForChat = activeVideoWorkflow;
-      if (activeVideoWorkflow.stage === "storyline" && !activeVideoWorkflow.storyboard) {
-        // Generate storyboard in background when needed
-        workflowForChat = await generateStoryboardForWorkflow(activeVideoWorkflow);
-        setActiveVideoWorkflow(workflowForChat);
-      }
-      
+      // Use current workflow - storyboard generation happens via proceed_to_next_stage tool
+      // DO NOT auto-generate storyboard here - let the AI agent handle stage transitions
       const stream = await chatWithVideoAgent(
         productId,
         newMessages,
-        workflowForChat,
+        activeVideoWorkflow,
         product
       );
       
       let fullText = "";
+      let lastKnownStage = activeVideoWorkflow.stage;
+      let updatedWorkflow = activeVideoWorkflow;
+      
       for await (const chunk of readStreamableValue(stream)) {
         debugLog("Video chunk received:", {
           hasText: !!chunk?.text,
@@ -426,6 +467,13 @@ export default function ProductChatPage() {
           setVideoStreamingText(fullText);
         }
         if (chunk?.workflow) {
+          const prevStage = lastKnownStage;
+          const newStage = chunk.workflow.stage;
+          lastKnownStage = newStage; // Update for next iteration
+          updatedWorkflow = chunk.workflow;
+          
+          debugLog("Stage transition:", prevStage, "->", newStage);
+          
           setActiveVideoWorkflow(chunk.workflow);
           // Also update the message's workflow state
           setMessages((prev) =>
@@ -436,17 +484,45 @@ export default function ProductChatPage() {
             )
           );
           
-          // Exit video mode if cancelled or complete
-          if (chunk.workflow.stage === "cancelled") {
+          // Exit video mode if cancelled
+          if (newStage === "cancelled") {
             setActiveVideoWorkflow(null);
+          }
+          
+          // Trigger video generation when entering generating stage
+          if (prevStage === "storyboard" && newStage === "generating") {
+            debugLog("🎬 Triggering video generation pipeline!");
+            // Small delay to let state update
+            setTimeout(() => {
+              triggerFrameGeneration(chunk.workflow);
+            }, 100);
           }
         }
       }
       
       debugLog("Video stream complete, fullText:", fullText?.slice(0, 100));
       
+      // Add assistant message to video mode messages
       if (fullText) {
-        setVideoModeMessages((prev) => [...prev, { role: "assistant", content: fullText }]);
+        const finalMessages = [...newMessages, { role: "assistant", content: fullText }];
+        setVideoModeMessages(finalMessages);
+        
+        // Sync messages to workflow state for persistence
+        if (updatedWorkflow) {
+          const workflowWithMessages = {
+            ...updatedWorkflow,
+            messages: finalMessages,
+          };
+          setActiveVideoWorkflow(workflowWithMessages);
+          // Update in main messages too for persistence
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.videoWorkflow?.id === workflowWithMessages.id
+                ? { ...m, videoWorkflow: workflowWithMessages }
+                : m
+            )
+          );
+        }
       }
     } catch (error) {
       console.error("Video mode error:", error);
@@ -461,64 +537,28 @@ export default function ProductChatPage() {
   
   return (
     <div 
-      className={cn(
-        "h-screen flex font-[var(--font-inter)] overflow-hidden transition-all duration-500",
-        isVideoMode 
-          ? "bg-orange-50 text-[#1a1a1a]" 
-          : "bg-[#faf9f7] text-[#1a1a1a]"
-      )}
+      className="h-screen flex font-[var(--font-inter)] overflow-hidden transition-all duration-500 bg-[#faf9f7] text-[#1a1a1a]"
     >
       {/* Background Grid */}
-      <div className={cn(
-        "fixed inset-0 pointer-events-none transition-opacity duration-500",
-        isVideoMode ? "bg-video-mode-orange-grid opacity-100" : "bg-grid opacity-30"
-      )} />
+      <div className="fixed inset-0 pointer-events-none bg-grid opacity-30" />
 
-      {/* Video Mode Header - Floats on top when active */}
+      {/* Video Subgraph View - Full screen overlay when active */}
       <AnimatePresence>
-        {isVideoMode && (
-          <motion.div
-            initial={{ y: -60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -60, opacity: 0 }}
-            transition={{ type: "spring", damping: 25 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-2.5 bg-white/95 backdrop-blur-md rounded-2xl shadow-lg border border-orange-200"
-          >
-            <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 animate-pulse" />
-            <span className="text-sm font-semibold text-orange-600 tracking-wide uppercase">
-              Video Ad
-            </span>
-            <div className="w-px h-4 bg-orange-200" />
-            <span className="text-sm text-gray-600 font-medium">
-              {activeVideoWorkflow?.stage === "storyline" ? "Storyline" : 
-               activeVideoWorkflow?.stage === "storyboard" ? "Storyboard" :
-               activeVideoWorkflow?.stage === "generating" ? "Generating" : "Complete"}
-            </span>
-            <div className="flex items-center gap-1 ml-2">
-              {[1, 2, 3, 4].map((step) => (
-                <div
-                  key={step}
-                  className={cn(
-                    "w-8 h-1.5 rounded-full transition-all duration-300",
-                    step <= (activeVideoWorkflow?.stage === "storyline" ? 1 : 
-                             activeVideoWorkflow?.stage === "storyboard" ? 2 : 
-                             activeVideoWorkflow?.stage === "generating" ? 3 : 4)
-                      ? "bg-gradient-to-r from-orange-500 to-orange-600"
-                      : "bg-orange-100"
-                  )}
-                />
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                debugLog("Exiting video mode");
-                setActiveVideoWorkflow(null);
-              }}
-              className="ml-3 w-7 h-7 rounded-full bg-orange-100 hover:bg-orange-200 flex items-center justify-center text-orange-600 hover:text-orange-700 text-sm transition-colors font-medium"
-            >
-              ×
-            </button>
-          </motion.div>
+        {isVideoMode && activeVideoWorkflow && (
+          <VideoSubgraphView
+            workflow={activeVideoWorkflow}
+            messages={videoModeMessages}
+            streamingText={videoStreamingText}
+            isLoading={isVideoModeLoading}
+            onClose={() => {
+              debugLog("Closing video subgraph view");
+              setActiveVideoWorkflow(null);
+            }}
+            onSendMessage={(message) => {
+              debugLog("Sending video mode message:", message);
+              handleVideoModeMessage(message);
+            }}
+          />
         )}
       </AnimatePresence>
 
@@ -648,23 +688,13 @@ export default function ProductChatPage() {
       </motion.aside>
 
       {/* Main Chat */}
-      <main className={cn(
-        "flex-1 flex flex-col relative",
-        isVideoMode && "pt-16" // Add padding for floating header
-      )}>
-        {!isVideoMode && (
-          <>
-            <div className="blur-orb-orange top-[-150px] right-[5%] opacity-30" />
-            <div className="blur-orb-pink bottom-[10%] left-[10%] opacity-20" />
-          </>
-        )}
+      <main className="flex-1 flex flex-col relative">
+        <div className="blur-orb-orange top-[-150px] right-[5%] opacity-30" />
+        <div className="blur-orb-pink bottom-[10%] left-[10%] opacity-20" />
 
 
 
-        <div className={cn(
-          "flex-1 overflow-y-auto px-8 py-12 relative z-10 scrollbar-thin",
-          isVideoMode ? "py-4 pb-52" : "pb-48"
-        )}>
+        <div className="flex-1 overflow-y-auto px-8 py-12 pb-48 relative z-10 scrollbar-thin">
           <div className="max-w-2xl mx-auto space-y-8">
             <AnimatePresence mode="popLayout">
               {messages.map((msg) => (
@@ -696,72 +726,13 @@ export default function ProductChatPage() {
                           />
                         )}
                         {msg.videoWorkflow && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="space-y-4 mt-2"
-                          >
-                            {/* Storyline Card */}
-                            {msg.videoWorkflow.storyline && (
-                              <div className="rounded-2xl p-5 bg-white border-2 border-orange-200 shadow-sm">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                                  <span className="text-xs font-bold text-orange-600 tracking-wider uppercase">Storyline</span>
-                                </div>
-                                <h4 className="font-semibold text-gray-900 text-lg mb-2">{msg.videoWorkflow.storyline.theme}</h4>
-                                <p className="text-gray-600 text-sm italic mb-3 leading-relaxed">"{msg.videoWorkflow.storyline.hook}"</p>
-                                <p className="text-gray-500 text-sm leading-relaxed">{msg.videoWorkflow.storyline.narrative}</p>
-                                <div className="flex gap-4 mt-4 pt-3 border-t border-orange-100">
-                                  <span className="text-xs text-gray-400 font-medium">~{msg.videoWorkflow.storyline.estimatedDuration}s duration</span>
-                                  <span className="text-xs text-gray-400 font-medium capitalize">{msg.videoWorkflow.storyline.targetPlatform}</span>
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Storyboard Clips - Vertical Layout */}
-                            {msg.videoWorkflow.storyboard && msg.videoWorkflow.stage !== "storyline" && (
-                              <div className="rounded-2xl p-5 bg-white border-2 border-orange-200 shadow-sm">
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                                    <span className="text-xs font-bold text-orange-600 tracking-wider uppercase">Storyboard</span>
-                                  </div>
-                                  <span className="text-xs text-gray-400 font-medium">
-                                    {msg.videoWorkflow.storyboard.clips.length} clips · {msg.videoWorkflow.storyboard.totalDuration}s total
-                                  </span>
-                                </div>
-                                <div className="space-y-3">
-                                  {msg.videoWorkflow.storyboard.clips.map((clip) => (
-                                    <div key={clip.id} className="flex gap-3 p-3 rounded-xl bg-orange-50/50 border border-orange-100">
-                                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 text-white text-sm font-bold flex items-center justify-center shrink-0 shadow-sm">
-                                        {clip.index}
-                                      </div>
-                                      <div className="flex-1">
-                                        <p className="text-gray-700 text-sm leading-relaxed">{clip.description}</p>
-                                        <span className="text-xs text-orange-500 font-medium mt-1 inline-block">{clip.duration}s</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Status badge */}
-                            <div className="flex items-center gap-2">
-                              <span className={cn(
-                                "text-xs px-3 py-1 rounded-full font-medium",
-                                msg.videoWorkflow.stage === "complete" 
-                                  ? "bg-green-100 text-green-600 border border-green-200" 
-                                  : msg.videoWorkflow.stage === "cancelled"
-                                  ? "bg-gray-100 text-gray-500 border border-gray-200"
-                                  : "bg-orange-100 text-orange-600 border border-orange-200"
-                              )}>
-                                {msg.videoWorkflow.stage === "complete" ? "Complete" :
-                                 msg.videoWorkflow.stage === "cancelled" ? "Cancelled" :
-                                 `${msg.videoWorkflow.stage.charAt(0).toUpperCase() + msg.videoWorkflow.stage.slice(1)}`}
-                              </span>
-                            </div>
-                          </motion.div>
+                          <VideoWorkflowCard
+                            workflow={msg.videoWorkflow}
+                            onExpand={() => {
+                              debugLog("Expanding video workflow:", msg.videoWorkflow?.id);
+                              setActiveVideoWorkflow(msg.videoWorkflow!);
+                            }}
+                          />
                         )}
                       </div>
                     </div>
@@ -772,38 +743,7 @@ export default function ProductChatPage() {
               ))}
             </AnimatePresence>
 
-            {/* Video Mode Conversation Messages */}
-            {isVideoMode && videoModeMessages.length > 0 && (
-              <div className="space-y-4 mt-4">
-                {videoModeMessages.map((msg, i) => (
-                  <motion.div
-                    key={`video-${i}`}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={msg.role === "user" ? "flex justify-end" : "flex items-start gap-4"}
-                  >
-                    {msg.role === "assistant" ? (
-                      <>
-                        <div className="assistant-avatar mt-1">
-                          <span className="assistant-avatar-initial">E</span>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-base text-gray-700 leading-relaxed">{msg.content}</p>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="inline-block max-w-md">
-                        <p className="text-base font-medium text-[#1a1a1a]/70 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-2xl border border-orange-200 shadow-sm whitespace-pre-wrap">
-                          {msg.content}
-                        </p>
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )}
-
-            {(isThinking || isVideoModeLoading) && (
+            {isThinking && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -815,8 +755,7 @@ export default function ProductChatPage() {
                   </div>
                   <div className="flex flex-col gap-2">
                     <span className="text-xs font-[var(--font-jetbrains)] text-[#1a1a1a]/30">
-                      {isVideoModeLoading ? (videoStreamingText || "thinking...") : "thinking..."}
-                      {isVideoModeLoading && videoStreamingText && <span className="animate-pulse ml-1">▊</span>}
+                      thinking...
                     </span>
                   </div>
                 </div>

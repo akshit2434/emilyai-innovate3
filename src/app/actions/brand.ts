@@ -441,7 +441,19 @@ export async function chatWithVideoAgent(
               
               // Apply workflow updates based on tool result
               if (result.type === "workflow_update") {
+                const prevStage = updatedWorkflow.stage;
                 updatedWorkflow = applyWorkflowUpdate(updatedWorkflow, result);
+                
+                // Generate storyboard when transitioning from storyline to storyboard
+                if (prevStage === "storyline" && updatedWorkflow.stage === "storyboard" && !updatedWorkflow.storyboard) {
+                  console.log("[VIDEO AGENT] Generating storyboard on stage transition...");
+                  const storyboard = await createInitialStoryboard(
+                    updatedWorkflow.productContext,
+                    updatedWorkflow.storyline!
+                  );
+                  updatedWorkflow.storyboard = storyboard;
+                  console.log("[VIDEO AGENT] Storyboard generated with", storyboard.clips.length, "clips");
+                }
                 
                 // Use the tool's message as AI response if no text was accumulated
                 if (result.message && !accumulatedText) {
@@ -548,8 +560,22 @@ function applyWorkflowUpdate(
         updated.stage = "storyboard";
       } else if (updated.stage === "storyboard") {
         updated.stage = "generating";
+        // Initialize generated frames and clips for each clip
+        if (updated.storyboard) {
+          updated.generatedFrames = updated.storyboard.clips.map((clip) => ({
+            clipId: clip.id,
+            startFrameUrl: null,
+            endFrameUrl: null,
+            status: "pending" as const,
+          }));
+          updated.generatedClips = updated.storyboard.clips.map((clip) => ({
+            clipId: clip.id,
+            videoUrl: null,
+            status: "pending" as const,
+          }));
+        }
       } else if (updated.stage === "generating") {
-        // Finalize when proceeding from generating
+        // Complete the video when all frames are done
         updated.stage = "complete";
         updated.videoUrl = "https://example.com/mock-video.mp4";
       }
@@ -568,10 +594,7 @@ function applyWorkflowUpdate(
       updated.stage = "cancelled";
       break;
       
-    case "finalize":
-      updated.stage = "complete";
-      updated.videoUrl = "https://example.com/mock-video.mp4";
-      break;
+    // Note: "finalize" action removed - generation happens via triggerFrameGeneration
   }
   
   return updated;
@@ -602,3 +625,95 @@ export async function generateStoryboardForWorkflow(
     stage: "storyboard",
   };
 }
+
+// Generate frames for workflow (mock implementation)
+export async function generateFramesForWorkflow(
+  workflow: VideoWorkflowState
+) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  console.log("[VIDEO GEN] Starting video generation pipeline for workflow:", workflow.id);
+
+  const stream = createStreamableValue<any>();
+
+  (async () => {
+    try {
+      if (!workflow.storyboard) {
+        throw new Error("No storyboard to generate from");
+      }
+
+      const { runVideoGenerationPipeline } = await import("@/lib/videoGeneration");
+      
+      const clips = workflow.storyboard.clips.map(c => ({
+        id: c.id,
+        description: c.description,
+        duration: c.duration,
+      }));
+
+      console.log("[VIDEO GEN] Running pipeline with", clips.length, "clips");
+
+      const updatedWorkflow = { ...workflow };
+      updatedWorkflow.stage = "generating";
+      updatedWorkflow.generatedFrames = clips.map(c => ({
+        clipId: c.id,
+        startFrameUrl: null,
+        endFrameUrl: null,
+        status: "pending" as const,
+      }));
+      updatedWorkflow.generatedClips = clips.map(c => ({
+        clipId: c.id,
+        videoUrl: null,
+        status: "pending" as const,
+      }));
+
+      for await (const progress of runVideoGenerationPipeline(clips)) {
+        console.log("[VIDEO GEN]", progress.phase, "-", progress.message);
+        
+        // Update workflow state based on progress
+        updatedWorkflow.generationPhase = progress.phase === "complete" ? "done" : progress.phase;
+        
+        if (progress.frames) {
+          updatedWorkflow.generatedFrames = progress.frames.map(f => ({
+            clipId: f.clipId,
+            startFrameUrl: f.startUrl,
+            endFrameUrl: f.endUrl,
+            status: f.status as "pending" | "generating" | "done",
+          }));
+        }
+        
+        if (progress.clips) {
+          updatedWorkflow.generatedClips = progress.clips.map(c => ({
+            clipId: c.clipId,
+            videoUrl: c.url,
+            status: "done" as const,
+          }));
+        }
+        
+        if (progress.finalVideo) {
+          updatedWorkflow.stage = "complete";
+          updatedWorkflow.generationPhase = "done";
+          updatedWorkflow.videoUrl = progress.finalVideo.url;
+        }
+
+        stream.update({
+          workflow: { ...updatedWorkflow },
+          phase: progress.phase,
+          message: progress.message,
+          complete: progress.phase === "complete",
+        });
+      }
+
+      stream.done();
+    } catch (error: any) {
+      console.error("[VIDEO GEN] Error:", error);
+      stream.error(error);
+    }
+  })();
+
+  return stream.value;
+}
+

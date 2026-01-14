@@ -40,16 +40,26 @@ export interface GeneratedFrame {
   status: "pending" | "generating" | "done";
 }
 
+export interface GeneratedClipState {
+  clipId: string;
+  videoUrl: string | null;
+  status: "pending" | "generating" | "done";
+}
+
 export interface VideoWorkflowState {
   id: string;
   stage: "storyline" | "storyboard" | "generating" | "complete" | "cancelled";
+  generationPhase?: "frames" | "clips" | "stitching" | "done";
   productContext: any;
   userRequest: string;
   storyline: VideoStoryline | null;
   storyboard: VideoStoryboard | null;
   generatedFrames: GeneratedFrame[];
+  generatedClips: GeneratedClipState[];
   videoUrl: string | null;
   error: string | null;
+  // Messages within video mode (separate from main chat)
+  messages: Array<{ role: string; content: string }>;
 }
 
 // ============================================================================
@@ -71,8 +81,10 @@ const VideoAgentState = Annotation.Root({
       storyline: null,
       storyboard: null,
       generatedFrames: [],
+      generatedClips: [],
       videoUrl: null,
       error: null,
+      messages: [],
     }),
   }),
   product: Annotation<any>({
@@ -86,7 +98,7 @@ const VideoAgentState = Annotation.Root({
 // ============================================================================
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
   temperature: 0.8,
   streaming: true,
@@ -231,21 +243,7 @@ const cancelWorkflowTool = tool(
   }
 );
 
-const finalizeVideoTool = tool(
-  async ({}) => {
-    console.log("[VIDEO AGENT] finalize_video");
-    return JSON.stringify({
-      type: "workflow_update",
-      action: "finalize",
-      message: "Starting video generation...",
-    });
-  },
-  {
-    name: "finalize_video",
-    description: "Finalize and generate the video. Use when user approves the storyboard and wants to create the final video.",
-    schema: z.object({}),
-  }
-);
+// Note: finalize_video removed - generation is triggered via proceed_to_next_stage when in storyboard stage
 
 const videoTools = [
   updateStorylineTool,
@@ -255,7 +253,7 @@ const videoTools = [
   proceedToNextStageTool,
   goBackStageTool,
   cancelWorkflowTool,
-  finalizeVideoTool,
+  // finalize_video removed - proceed_to_next_stage handles storyboard -> generating transition
 ];
 
 const videoToolNode = new ToolNode(videoTools);
@@ -281,18 +279,25 @@ ${workflowContext}
 - update_clip: Edit a specific clip
 - add_clip: Add a new clip
 - remove_clip: Delete a clip
-- proceed_to_next_stage: Move forward when user approves
+- proceed_to_next_stage: Move forward ONLY when user explicitly approves
 - go_back_stage: Return to previous stage
 - cancel_workflow: Exit video mode
-- finalize_video: Complete and generate
+- finalize_video: Complete and generate the video
 
-**BEHAVIOR:**
-- Understand natural language references like "clip 3", "the hook", "make it shorter"
-- When user seems happy (says "good", "nice", "continue"), use proceed_to_next_stage
-- When user wants to exit (says "cancel", "nevermind"), use cancel_workflow
-- After making changes, briefly confirm what you did
+**CRITICAL - STAGE TRANSITIONS:**
+- ONLY call proceed_to_next_stage when user EXPLICITLY says to proceed/continue/next/looks good/approve
+- If user gives feedback or suggestions, APPLY the changes first, then ASK if they want to proceed
+- Do NOT automatically proceed after making changes - always confirm with user first
+- Example good flow: User says "make the hook punchier" → You update → You say "Updated! Ready to move to storyboard, or any other changes?"
+- Example bad flow: User says "nice" about a specific change → You immediately proceed (DON'T do this)
 
-**STYLE:** Creative, collaborative, concise. Help the user refine their video vision.
+**STAGE BEHAVIOR:**
+- STORYLINE stage: Present the storyline. Wait for user to explicitly approve before moving to storyboard.
+- STORYBOARD stage: Present clips. Wait for user to explicitly approve. When they approve, call proceed_to_next_stage to start generation.
+- GENERATING stage: Video is being generated automatically. Tell user to wait and watch the progress.
+- COMPLETE: Video is ready to view.
+
+**STYLE:** Creative, collaborative, concise. Always ask for explicit approval before major transitions.
   `);
 
   const modelWithTools = llm.bindTools(videoTools);
@@ -355,7 +360,7 @@ export async function createInitialStoryline(
   userRequest: string
 ): Promise<VideoStoryline> {
   const storyLlm = new ChatGoogleGenerativeAI({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     apiKey: process.env.GOOGLE_GENAI_API_KEY,
     temperature: 0.8,
   });
@@ -396,7 +401,7 @@ export async function createInitialStoryboard(
   storyline: VideoStoryline
 ): Promise<VideoStoryboard> {
   const storyLlm = new ChatGoogleGenerativeAI({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     apiKey: process.env.GOOGLE_GENAI_API_KEY,
     temperature: 0.8,
   });
@@ -447,7 +452,9 @@ export function createNewVideoWorkflow(
     storyline: null,
     storyboard: null,
     generatedFrames: [],
+    generatedClips: [],
     videoUrl: null,
     error: null,
+    messages: [],
   };
 }
