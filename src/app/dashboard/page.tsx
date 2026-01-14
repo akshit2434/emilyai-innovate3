@@ -88,8 +88,22 @@ export default function DashboardPage() {
       {/* Sidebar */}
       <aside className="w-64 border-r border-black/[0.04] glass-morphism flex flex-col relative z-10">
         <div className="p-6 flex items-center gap-3">
-          <img src="/logo.png" alt="EmilyAI" className="w-8 h-8 object-contain" />
-          <span className="font-semibold text-lg tracking-tight">EmilyAI</span>
+          <div className="relative">
+            <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-orange-500 via-pink-500 to-violet-500 opacity-60" />
+            <div className="relative rounded-2xl bg-transparent p-1.5">
+              <img
+                src="/logo-v2.webp"
+                alt="EmilyAI"
+                className="w-8 h-8 object-contain drop-shadow-[0_6px_14px_rgba(236,72,153,0.18)]"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col leading-tight">
+            <span className="font-semibold text-[15px] tracking-tight">EmilyAI</span>
+            <span className="text-[10px] text-[#1a1a1a]/45 font-[var(--font-jetbrains)] tracking-widest uppercase">
+              Dashboard
+            </span>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">

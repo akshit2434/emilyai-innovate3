@@ -225,33 +225,36 @@ export default function LandingPage() {
             : 'mt-0 mx-0 w-full max-w-none px-4 sm:px-8 h-16 bg-white/70 rounded-none border-transparent shadow-none'
             }`}
         >
-          {/* Logo with animated glow */}
-          <Link href="/" className="flex items-center gap-2 sm:gap-3 group">
+          {/* Brand mark */}
+          <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group select-none">
             <motion.div
               className="relative"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              whileHover={{ scale: 1.06, y: -1 }}
+              whileTap={{ scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 420, damping: 18 }}
             >
-              {/* Animated glow behind logo */}
-              <motion.div
-                className="absolute inset-0 rounded-xl bg-gradient-to-br from-[var(--solar-orange)] to-[var(--luminous-pink)] blur-lg -z-10"
-                animate={{
-                  scale: [1, 1.2, 1],
-                  opacity: [0.3, 0.5, 0.3],
-                }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              />
-              <Image
-                src="/logo.png"
-                alt="EmilyAI Logo"
-                width={40}
-                height={40}
-                className="w-9 h-9 sm:w-10 sm:h-10 object-contain"
-              />
+              {/* Gradient ring */}
+              <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-[var(--solar-orange)] via-[var(--luminous-pink)] to-[var(--deep-violet)] opacity-70 blur-[0.5px]" />
+              {/* Transparent inner (no tile) */}
+              <div className="relative rounded-2xl bg-transparent p-1.5">
+                <motion.div
+                  className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[var(--solar-orange)] to-[var(--luminous-pink)] blur-lg -z-10"
+                  animate={{ scale: [1, 1.15, 1], opacity: [0.18, 0.32, 0.18] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+                />
+                <Image
+                  src="/logo-v2.webp"
+                  alt="EmilyAI Logo"
+                  width={40}
+                  height={40}
+                  priority
+                  className="w-9 h-9 sm:w-10 sm:h-10 object-contain drop-shadow-[0_6px_14px_rgba(236,72,153,0.18)]"
+                />
+              </div>
             </motion.div>
+
             <motion.span
-              className="text-lg sm:text-xl font-semibold tracking-tight font-[var(--font-playfair)] group-hover:text-[var(--solar-orange)] transition-colors duration-300"
+              className="text-[15px] sm:text-[17px] font-semibold tracking-tight font-[var(--font-playfair)] text-[var(--charcoal-plum)] group-hover:text-[var(--solar-orange)] transition-colors duration-300"
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 }}
@@ -1106,14 +1109,19 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-12">
             <div>
-              <Link href="/" className="flex items-center gap-3 mb-5">
-                <Image
-                  src="/logo.png"
-                  alt="EmilyAI Logo"
-                  width={40}
-                  height={40}
-                  className="w-10 h-10 object-contain"
-                />
+              <Link href="/" className="flex items-center gap-3 mb-5 group">
+                <div className="relative">
+                  <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-[var(--solar-orange)] via-[var(--luminous-pink)] to-[var(--deep-violet)] opacity-60" />
+                  <div className="relative rounded-2xl bg-white/80 backdrop-blur-xl border border-black/[0.04] shadow-sm p-1.5 shimmer group-hover:shadow-md transition-shadow">
+                    <Image
+                      src="/logo-v2.webp"
+                      alt="EmilyAI Logo"
+                      width={40}
+                      height={40}
+                      className="w-10 h-10 object-contain"
+                    />
+                  </div>
+                </div>
                 <span className="font-semibold text-xl tracking-tight font-[var(--font-playfair)]">
                   EmilyAI
                 </span>
